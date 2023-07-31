@@ -17,7 +17,7 @@ import (
 func Run(configFile string) {
 
 	ctx, cancel := context.WithCancel(context.Background())
-	_connection, _db, _status, _queue := bootstrap(configFile)
+	_connection, _redisClient, _redisInfo, _db, _status, _queue := bootstrap(configFile)
 
 	// Attempting to listen to Ctrl+C signal
 	// and when received gracefully shutting down the service
@@ -50,6 +50,11 @@ func Run(configFile string) {
 			return
 		}
 
+		if err := _redisInfo.Client.Close(); err != nil {
+			log.Print(color.Red.Sprintf("[!] Failed to close connection to Redis : %s", err.Error()))
+			return
+		}
+
 		// Stopping process
 		log.Print(color.Magenta.Sprintf("\n[+] Gracefully shut down the service"))
 		os.Exit(0)
@@ -59,9 +64,9 @@ func Run(configFile string) {
 	go _queue.Start(ctx)
 
 	// Pushing block header propagation listener to another thread of execution
-	go blk.SubscribeToNewBlocks(_connection, _db, _status, _queue)
+	go blk.SubscribeToNewBlocks(_connection, _db, _status, _redisInfo, _queue)
 
 	// Starting http server on main thread
-	rest.RunHTTPServer(_db, _status)
+	rest.RunHTTPServer(_db, _status, _redisClient)
 
 }

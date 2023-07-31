@@ -4,6 +4,8 @@ import (
 	"context"
 	"math"
 	"time"
+
+	"github.com/denniswon/validationcloud/app/config"
 )
 
 // You don’t have unlimited resource on your machine, the minimal size of a goroutine object is 2 KB,
@@ -13,9 +15,14 @@ import (
 
 // Block - Keeps track of single block i.e. how many
 // times attempted till date, last attempted to process
+// whether block data has been published on pubsub topic or not,
 // is block processing currently
 type Block struct {
-	Done       			bool
+	UnconfirmedProgress bool // 1. Joins
+	Published           bool // 2. Pub/Sub publishing
+	UnconfirmedDone     bool // 3. Done with processing
+	ConfirmedProgress   bool // 4. Attempting confirm whether chain reorg happened or not
+	ConfirmedDone       bool // 5. Done with bringing latest changes
 	LastAttempted       time.Time
 	Delay               time.Duration
 }
@@ -46,10 +53,13 @@ func (b *Block) CanAttempt() bool {
 }
 
 // Request - Any request to be placed into queue's channels in this form
+// client can also receive response/ confirmation over channel that they specify
 type Request struct {
 	BlockNumber  uint64
 	ResponseChan chan bool
 }
+
+type Update Request
 
 // Next - Block to be processed next, asked by sending this request
 // when receptor detects so, will attempt to find out what should be next processed and
@@ -68,7 +78,10 @@ type Stat struct {
 
 // StatResponse - Statistics of queue to be responded back to client in this form
 type StatResponse struct {
-	Waiting    			uint64
+	UnconfirmedProgress uint64
+	UnconfirmedWaiting  uint64
+	ConfirmedProgress   uint64
+	ConfirmedWaiting    uint64
 	Total               uint64
 }
 
@@ -77,13 +90,20 @@ type BlockProcessorQueue struct {
 	Blocks                map[uint64]*Block
 	StartedWith           uint64
 	TotalInserted         uint64
+	LatestBlock           uint64
 	Total                 uint64
 	PutChan               chan Request
+	CanPublishChan        chan Request
+	PublishedChan         chan Request
 	InsertedChan          chan Request
-	FailedChan   		  chan Request
-	DoneChan     		  chan Request
+	UnconfirmedFailedChan chan Request
+	UnconfirmedDoneChan   chan Request
+	ConfirmedFailedChan   chan Request
+	ConfirmedDoneChan     chan Request
 	StatChan              chan Stat
-	NextChan     		  chan Next
+	LatestChan            chan Update
+	UnconfirmedNextChan   chan Next
+	ConfirmedNextChan     chan Next
 }
 
 // New - Getting new instance of queue, to be invoked during setting up application
@@ -93,13 +113,20 @@ func New(startingWith uint64) *BlockProcessorQueue {
 		Blocks:                make(map[uint64]*Block),
 		StartedWith:           startingWith,
 		TotalInserted:         0,
+		LatestBlock:           0,
 		Total:                 0,
 		PutChan:               make(chan Request, 128),
+		CanPublishChan:        make(chan Request, 128),
+		PublishedChan:         make(chan Request, 128),
 		InsertedChan:          make(chan Request, 128),
-		FailedChan:   		   make(chan Request, 128),
-		DoneChan:     		   make(chan Request, 128),
+		UnconfirmedFailedChan: make(chan Request, 128),
+		UnconfirmedDoneChan:   make(chan Request, 128),
+		ConfirmedFailedChan:   make(chan Request, 128),
+		ConfirmedDoneChan:     make(chan Request, 128),
 		StatChan:              make(chan Stat, 1),
-		NextChan:    		   make(chan Next, 1),
+		LatestChan:            make(chan Update, 1),
+		UnconfirmedNextChan:   make(chan Next, 1),
+		ConfirmedNextChan:     make(chan Next, 1),
 	}
 
 }
@@ -125,6 +152,42 @@ func (b *BlockProcessorQueue) Put(block uint64) bool {
 
 }
 
+// CanPublish - Before any client attempts to publish any block
+// on Pub/Sub topic, they're supposed to be invoking this method
+// to check whether they're eligible of publishing or not
+//
+// NOTE: if any other client has already published it, we'll avoid redoing it
+func (b *BlockProcessorQueue) CanPublish(block uint64) bool {
+
+	resp := make(chan bool)
+	req := Request{
+		BlockNumber:  block,
+		ResponseChan: resp,
+	}
+
+	b.CanPublishChan <- req
+	return <-resp
+
+}
+
+// Published - Asks queue manager to mark that this block has been
+// successfully published on Pub/Sub topic
+//
+// Future block processing attempts (if any), are supposed to be
+// avoiding doing this, if already done successfully
+func (b *BlockProcessorQueue) Published(block uint64) bool {
+
+	resp := make(chan bool)
+	req := Request{
+		BlockNumber:  block,
+		ResponseChan: resp,
+	}
+
+	b.PublishedChan <- req
+	return <-resp
+
+}
+
 // Inserted - Marking this block has been inserted into DB (not updation, it's insertion)
 func (b *BlockProcessorQueue) Inserted(block uint64) bool {
 
@@ -139,8 +202,8 @@ func (b *BlockProcessorQueue) Inserted(block uint64) bool {
 
 }
 
-// Failed - block processing failed
-func (b *BlockProcessorQueue) Failed(block uint64) bool {
+// UnconfirmedFailed - Unconfirmed block processing failed
+func (b *BlockProcessorQueue) UnconfirmedFailed(block uint64) bool {
 
 	resp := make(chan bool)
 	req := Request{
@@ -148,13 +211,13 @@ func (b *BlockProcessorQueue) Failed(block uint64) bool {
 		ResponseChan: resp,
 	}
 
-	b.FailedChan <- req
+	b.UnconfirmedFailedChan <- req
 	return <-resp
 
 }
 
-// Done - block processed successfully
-func (b *BlockProcessorQueue) Done(block uint64) bool {
+// UnconfirmedDone - Unconfirmed block processed successfully
+func (b *BlockProcessorQueue) UnconfirmedDone(block uint64) bool {
 
 	resp := make(chan bool)
 	req := Request{
@@ -162,7 +225,35 @@ func (b *BlockProcessorQueue) Done(block uint64) bool {
 		ResponseChan: resp,
 	}
 
-	b.DoneChan <- req
+	b.UnconfirmedDoneChan <- req
+	return <-resp
+
+}
+
+// ConfirmedFailed - Confirmed block processing failed
+func (b *BlockProcessorQueue) ConfirmedFailed(block uint64) bool {
+
+	resp := make(chan bool)
+	req := Request{
+		BlockNumber:  block,
+		ResponseChan: resp,
+	}
+
+	b.ConfirmedFailedChan <- req
+	return <-resp
+
+}
+
+// ConfirmedDone - Confirmed block processed successfully
+func (b *BlockProcessorQueue) ConfirmedDone(block uint64) bool {
+
+	resp := make(chan bool)
+	req := Request{
+		BlockNumber:  block,
+		ResponseChan: resp,
+	}
+
+	b.ConfirmedDoneChan <- req
 	return <-resp
 
 }
@@ -179,8 +270,20 @@ func (b *BlockProcessorQueue) Stat() StatResponse {
 
 }
 
-// Next - Next block that can be processed
-func (b *BlockProcessorQueue) Next() (uint64, bool) {
+// Latest - Block head subscriber will update queue manager
+// that latest block seen is updated
+func (b *BlockProcessorQueue) Latest(num uint64) bool {
+
+	resp := make(chan bool)
+	udt := Update{BlockNumber: num, ResponseChan: resp}
+
+	b.LatestChan <- udt
+	return <-resp
+
+}
+
+// UnconfirmedNext - Next block that can be processed, present in unconfirmed block queue
+func (b *BlockProcessorQueue) UnconfirmedNext() (uint64, bool) {
 
 	resp := make(chan struct {
 		Status bool
@@ -188,10 +291,39 @@ func (b *BlockProcessorQueue) Next() (uint64, bool) {
 	})
 	req := Next{ResponseChan: resp}
 
-	b.NextChan <- req
+	b.UnconfirmedNextChan <- req
 
 	v := <-resp
 	return v.Number, v.Status
+
+}
+
+// ConfirmedNext - Next block that can be processed, to get confirmation & finalised
+func (b *BlockProcessorQueue) ConfirmedNext() (uint64, bool) {
+
+	resp := make(chan struct {
+		Status bool
+		Number uint64
+	})
+	req := Next{ResponseChan: resp}
+
+	b.ConfirmedNextChan <- req
+
+	v := <-resp
+	return v.Number, v.Status
+
+}
+
+// CanBeConfirmed - Checking whether given block number has reached
+// finality as per given user set preference, then it can be attempted
+// to be checked again & finally entered into storage
+func (b *BlockProcessorQueue) CanBeConfirmed(num uint64) bool {
+
+	if b.LatestBlock < config.GetBlockConfirmations() {
+		return false
+	}
+
+	return b.LatestBlock - config.GetBlockConfirmations() >= num
 
 }
 
@@ -217,9 +349,35 @@ func (b *BlockProcessorQueue) Start(ctx context.Context) {
 			}
 
 			b.Blocks[req.BlockNumber] = &Block{
+				UnconfirmedProgress: true,
 				LastAttempted:       time.Now().UTC(),
 				Delay:               time.Duration(1) * time.Second,
 			}
+			req.ResponseChan <- true
+
+		case req := <-b.CanPublishChan:
+
+			block, ok := b.Blocks[req.BlockNumber]
+			if !ok {
+				req.ResponseChan <- false
+				break
+			}
+
+			req.ResponseChan <- !block.Published
+
+		case req := <-b.PublishedChan:
+			// Worker go rountine marks this block has been published
+			//
+			// If not, it'll be marked so & no future attempt
+			// should try to publish it again over Pub/Sub
+
+			block, ok := b.Blocks[req.BlockNumber]
+			if !ok {
+				req.ResponseChan <- false
+				break
+			}
+
+			block.Published = true
 			req.ResponseChan <- true
 
 		case req := <-b.InsertedChan:
@@ -233,7 +391,7 @@ func (b *BlockProcessorQueue) Start(ctx context.Context) {
 			b.TotalInserted++
 			req.ResponseChan <- true
 
-		case req := <-b.FailedChan:
+		case req := <-b.UnconfirmedFailedChan:
 
 			block, ok := b.Blocks[req.BlockNumber]
 			if !ok {
@@ -241,11 +399,12 @@ func (b *BlockProcessorQueue) Start(ctx context.Context) {
 				break
 			}
 
+			block.UnconfirmedProgress = false
 			block.SetDelay()
 
 			req.ResponseChan <- true
 
-		case req := <-b.DoneChan:
+		case req := <-b.UnconfirmedDoneChan:
 
 			block, ok := b.Blocks[req.BlockNumber]
 			if !ok {
@@ -253,22 +412,110 @@ func (b *BlockProcessorQueue) Start(ctx context.Context) {
 				break
 			}
 
-			block.Done = true
+			block.UnconfirmedProgress = false
+			block.UnconfirmedDone = true
+
+			block.ConfirmedDone = b.CanBeConfirmed(req.BlockNumber)
+
+			block.ResetDelay()
+			block.SetLastAttempted()
 
 			req.ResponseChan <- true
 
-		case nxt := <-b.NextChan:
+		case req := <-b.ConfirmedFailedChan:
+
+			block, ok := b.Blocks[req.BlockNumber]
+			if !ok {
+				req.ResponseChan <- false
+				break
+			}
+
+			block.ConfirmedProgress = false
+			block.SetDelay()
+
+			req.ResponseChan <- true
+
+		case req := <-b.ConfirmedDoneChan:
+
+			block, ok := b.Blocks[req.BlockNumber]
+			if !ok {
+				req.ResponseChan <- false
+				break
+			}
+
+			block.ConfirmedProgress = false
+			block.ConfirmedDone = true
+
+			req.ResponseChan <- true
+
+		case nxt := <-b.UnconfirmedNextChan:
+
+			// This is the block number which should be processed by requester client
+			var selected uint64
+			var found bool
+
+			for k := range b.Blocks {
+
+				if b.Blocks[k].ConfirmedDone || b.Blocks[k].ConfirmedProgress {
+					continue
+				}
+
+				if b.Blocks[k].UnconfirmedDone || b.Blocks[k].UnconfirmedProgress {
+					continue
+				}
+
+				if b.Blocks[k].CanAttempt() {
+					selected = k
+					found = true
+
+					break
+				}
+
+			}
+
+			if !found {
+
+				// As we've failed to find any block which can be processed now
+				// ask client to try again later. When to come back is upto client
+				nxt.ResponseChan <- struct {
+					Status bool
+					Number uint64
+				}{
+					Status: false,
+				}
+				break
+
+			}
+
+			// Updated when last this block was attempted to be processed
+			b.Blocks[selected].SetLastAttempted()
+			b.Blocks[selected].UnconfirmedProgress = true
+
+			// Asking client to proceed with processing of this block
+			nxt.ResponseChan <- struct {
+				Status bool
+				Number uint64
+			}{
+				Status: true,
+				Number: selected,
+			}
+
+		case nxt := <-b.ConfirmedNextChan:
 
 			var selected uint64
 			var found bool
 
 			for k := range b.Blocks {
 
-				if b.Blocks[k].Done {
+				if b.Blocks[k].ConfirmedDone || b.Blocks[k].ConfirmedProgress {
 					continue
 				}
 
-				if b.Blocks[k].CanAttempt() {
+				if !b.Blocks[k].UnconfirmedDone {
+					continue
+				}
+
+				if b.Blocks[k].CanAttempt() && b.CanBeConfirmed(k) {
 					selected = k
 					found = true
 
@@ -290,6 +537,7 @@ func (b *BlockProcessorQueue) Start(ctx context.Context) {
 			}
 
 			b.Blocks[selected].SetLastAttempted()
+			b.Blocks[selected].ConfirmedProgress = true
 
 			nxt.ResponseChan <- struct {
 				Status bool
@@ -307,8 +555,23 @@ func (b *BlockProcessorQueue) Start(ctx context.Context) {
 
 			for k := range b.Blocks {
 
-				if !b.Blocks[k].Done {
-					stat.Waiting++
+				if b.Blocks[k].UnconfirmedProgress {
+					stat.UnconfirmedProgress++
+					continue
+				}
+
+				if b.Blocks[k].UnconfirmedProgress == b.Blocks[k].UnconfirmedDone {
+					stat.UnconfirmedWaiting++
+					continue
+				}
+
+				if b.Blocks[k].ConfirmedProgress {
+					stat.ConfirmedProgress++
+					continue
+				}
+
+				if b.Blocks[k].ConfirmedProgress == b.Blocks[k].ConfirmedDone {
+					stat.ConfirmedWaiting++
 					continue
 				}
 
@@ -317,12 +580,19 @@ func (b *BlockProcessorQueue) Start(ctx context.Context) {
 			stat.Total = b.Total
 			req.ResponseChan <- stat
 
+		case udt := <-b.LatestChan:
+			// Latest block number seen by subscriber to
+			// sent to queue, to be used in when deciding whether some
+			// block is confirmed/ finalised or not
+			b.LatestBlock = udt.BlockNumber
+			udt.ResponseChan <- true
+
 		case <-time.After(time.Duration(100) * time.Millisecond):
 
-			// Finding out which blocks are good to clean those up
+			// Finding out which blocks are confirmed & we're good to clean those up
 			for k := range b.Blocks {
 
-				if b.Blocks[k].Done {
+				if b.Blocks[k].ConfirmedDone {
 					delete(b.Blocks, k)
 					b.Total++ // Successfully processed #-of blocks
 				}

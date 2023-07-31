@@ -41,7 +41,7 @@ func FindMissingBlocksInRange(found []uint64, from uint64, to uint64) []uint64 {
 // while running n workers concurrently, where n = number of cores this machine has
 //
 // Waits for all of them to complete
-func Syncer(client *ethclient.Client, _db *gorm.DB, queue *q.BlockProcessorQueue, fromBlock uint64, toBlock uint64, status *d.StatusHolder, jd func(*workerpool.WorkerPool, *d.Job, *q.BlockProcessorQueue)) {
+func Syncer(client *ethclient.Client, _db *gorm.DB, redis *d.RedisInfo, queue *q.BlockProcessorQueue, fromBlock uint64, toBlock uint64, status *d.StatusHolder, jd func(*workerpool.WorkerPool, *d.Job, *q.BlockProcessorQueue)) {
 	if !(fromBlock <= toBlock) {
 		log.Print(color.Red.Sprintf("[!] Bad block range for syncer"))
 		return
@@ -55,6 +55,7 @@ func Syncer(client *ethclient.Client, _db *gorm.DB, queue *q.BlockProcessorQueue
 		jd(wp, &d.Job{
 			Client: client,
 			DB:     _db,
+			Redis:  redis,
 			Block:  num,
 			Status: status,
 		}, queue)
@@ -103,7 +104,7 @@ func Syncer(client *ethclient.Client, _db *gorm.DB, queue *q.BlockProcessorQueue
 //
 // Range can be either ascending or descending, depending upon that proper arguments to be
 // passed to `Syncer` function during invokation
-func SyncBlocksByRange(client *ethclient.Client, _db *gorm.DB, queue *q.BlockProcessorQueue, fromBlock uint64, toBlock uint64, status *d.StatusHolder) {
+func SyncBlocksByRange(client *ethclient.Client, _db *gorm.DB, redis *d.RedisInfo, queue *q.BlockProcessorQueue, fromBlock uint64, toBlock uint64, status *d.StatusHolder) {
 
 	// Job to be submitted and executed by each worker
 	//
@@ -116,12 +117,12 @@ func SyncBlocksByRange(client *ethclient.Client, _db *gorm.DB, queue *q.BlockPro
 				return
 			}
 
-			if !FetchBlockByNumber(j.Client, j.Block, j.DB, queue, j.Status) {
-				queue.Failed(j.Block)
+			if !FetchBlockByNumber(j.Client, j.Block, j.DB, j.Redis, false, queue, j.Status) {
+				queue.UnconfirmedFailed(j.Block)
 				return
 			}
 
-			queue.Done(j.Block)
+			queue.UnconfirmedDone(j.Block)
 
 		})
 	}
@@ -129,9 +130,9 @@ func SyncBlocksByRange(client *ethclient.Client, _db *gorm.DB, queue *q.BlockPro
 	log.Printf("Starting block syncer\n")
 
 	if fromBlock < toBlock {
-		Syncer(client, _db, queue, fromBlock, toBlock, status, job)
+		Syncer(client, _db, redis, queue, fromBlock, toBlock, status, job)
 	} else {
-		Syncer(client, _db, queue, toBlock, fromBlock, status, job)
+		Syncer(client, _db, redis, queue, toBlock, fromBlock, status, job)
 	}
 
 	log.Printf("Stopping block syncer\n")
@@ -142,13 +143,13 @@ func SyncBlocksByRange(client *ethclient.Client, _db *gorm.DB, queue *q.BlockPro
 	//
 	// And this will itself run as a infinite job, completes one iteration &
 	// takes break for 1 min, then repeats
-	go SyncMissingBlocksInDB(client, _db, queue, status)
+	go SyncMissingBlocksInDB(client, _db, redis, queue, status)
 
 }
 
 // SyncMissingBlocksInDB - Checks with database for what blocks are present & what are not, fetches missing
 // blocks & related data iteratively
-func SyncMissingBlocksInDB(client *ethclient.Client, _db *gorm.DB, queue *q.BlockProcessorQueue, status *d.StatusHolder) {
+func SyncMissingBlocksInDB(client *ethclient.Client, _db *gorm.DB, redis *d.RedisInfo, queue *q.BlockProcessorQueue, status *d.StatusHolder) {
 
 	for {
 
@@ -185,18 +186,18 @@ func SyncMissingBlocksInDB(client *ethclient.Client, _db *gorm.DB, queue *q.Bloc
 					return
 				}
 
-				if !FetchBlockByNumber(j.Client, j.Block, j.DB, queue, j.Status) {
-					queue.Failed(j.Block)
+				if !FetchBlockByNumber(j.Client, j.Block, j.DB, j.Redis, false, queue, j.Status) {
+					queue.UnconfirmedFailed(j.Block)
 					return
 				}
 
-				queue.Done(j.Block)
+				queue.UnconfirmedDone(j.Block)
 
 			})
 
 		}
 
-		Syncer(client, _db, queue, 0, currentBlockNumber, status, job)
+		Syncer(client, _db, redis, queue, 0, currentBlockNumber, status, job)
 
 		log.Printf("Stopping missing block finder\n")
 		<-time.After(time.Duration(1) * time.Minute)

@@ -13,11 +13,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// RetryQueueManager - Pop oldest block number from the retry queue
+// RetryQueueManager - Pop oldest block number from Redis backed retry queue
 // and try to fetch it in different go routine
 //
 // Sleeps for 500 milliseconds then repeat
-func RetryQueueManager(client *ethclient.Client, _db *gorm.DB, queue *q.BlockProcessorQueue, status *d.StatusHolder) {
+func RetryQueueManager(client *ethclient.Client, _db *gorm.DB, redis *d.RedisInfo, queue *q.BlockProcessorQueue, status *d.StatusHolder) {
 	sleep := func() {
 		time.Sleep(time.Duration(512) * time.Millisecond)
 	}
@@ -29,13 +29,13 @@ func RetryQueueManager(client *ethclient.Client, _db *gorm.DB, queue *q.BlockPro
 	for {
 		sleep()
 
-		block, ok := queue.Next()
+		block, ok := queue.UnconfirmedNext()
 		if !ok {
 			continue
 		}
 
 		stat := queue.Stat()
-		log.Printf("ℹ️ Retrying block : %d [ Waiting : %d | Total : %d ]\n", block, stat.Waiting, stat.Total)
+		log.Printf("ℹ️ Retrying block : %d [ Unconfirmed : ( Progress : %d, Waiting : %d ) | Confirmed : ( Progress : %d, Waiting : %d ) | Total : %d ]\n", block, stat.UnconfirmedProgress, stat.UnconfirmedWaiting, stat.ConfirmedProgress, stat.ConfirmedWaiting, stat.Total)
 
 		// Submitting block processor job into pool
 		// which will be picked up & processed
@@ -45,14 +45,14 @@ func RetryQueueManager(client *ethclient.Client, _db *gorm.DB, queue *q.BlockPro
 
 			wp.Submit(func() {
 
-				if !FetchBlockByNumber(client, _blockNumber, _db, queue, status) {
+				if !FetchBlockByNumber(client, _blockNumber, _db, redis, true, queue, status) {
 
-					queue.Failed(_blockNumber)
+					queue.UnconfirmedFailed(_blockNumber)
 					return
 
 				}
 
-				queue.Done(_blockNumber)
+				queue.UnconfirmedDone(_blockNumber)
 
 			})
 

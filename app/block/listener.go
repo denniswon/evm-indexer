@@ -17,7 +17,7 @@ import (
 
 // SubscribeToNewBlocks - Listen for new block header available, then fetch block content
 // including all transactions in different worker
-func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, status *d.StatusHolder, queue *q.BlockProcessorQueue) {
+func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, status *d.StatusHolder, redis *d.RedisInfo, queue *q.BlockProcessorQueue) {
 	headerChan := make(chan *types.Header)
 
 	subs, err := connection.Websocket.SubscribeNewHead(context.Background(), headerChan)
@@ -73,6 +73,7 @@ func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, 
 			}
 
 			status.SetLatestBlockNumber(header.Number.Uint64())
+			queue.Latest(header.Number.Uint64())
 
 			if first {
 
@@ -81,8 +82,8 @@ func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, 
 
 				// Starting go routine for fetching blocks failed to process in previous attempt
 				//
-				// Uses queue for fetching pending block hash & retries
-				go RetryQueueManager(connection.RPC, _db, queue, status)
+				// Uses Redis backed queue for fetching pending block hash & retries
+				go RetryQueueManager(connection.RPC, _db, redis, queue, status)
 
 				// sync to latest state of block chain
 
@@ -93,9 +94,18 @@ func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, 
 				// Upper limit of syncing, in terms of block number
 				from := header.Number.Uint64() - 1
 				// Lower limit of syncing, in terms of block number
-				to := status.MaxBlockNumberAtStartUp()
+				//
+				// Subtracting confirmation required block number count, due to
+				// the fact it might be case those block contents might have changed due to
+				// some reorg, in the time duration, when the service was offline
+				var to uint64
+				if status.MaxBlockNumberAtStartUp() < cfg.GetBlockConfirmations() {
+					to = 0
+				} else {
+					to = status.MaxBlockNumberAtStartUp() - cfg.GetBlockConfirmations()
+				}
 
-				go SyncBlocksByRange(connection.RPC, _db, queue, from, to, status)
+				go SyncBlocksByRange(connection.RPC, _db, redis, queue, from, to, status)
 
 				// Making sure that when next latest block header is received, it'll not
 				// start another syncer
@@ -109,20 +119,48 @@ func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, 
 			// otherwise it might get wrong info, if new block gets mined very soon & this job is not yet submitted
 			func(blockHash common.Hash, blockNumber uint64, _queue *q.BlockProcessorQueue) {
 
+				// Next block which can be attempted to be checked
+				// while finally considering it confirmed & put into DB
+				if nxt, ok := _queue.ConfirmedNext(); ok {
+
+					log.Printf("🔅 Processing finalised block %d [ Latest Block : %d ]\n", nxt, status.GetLatestBlockNumber())
+
+					// Note, we are taking `next` variable's copy in local scope of closure, so that during
+					// iteration over queue elements, none of them get missed, becuase in a concurrent system,
+					// previous `next` can be overwritten by new `next` & we can end up missing a block
+					func(_oldestBlock uint64, _queue *q.BlockProcessorQueue) {
+
+						wp.Submit(func() {
+
+							if !FetchBlockByNumber(connection.RPC, _oldestBlock, _db, redis, false, queue, status) {
+
+								_queue.ConfirmedFailed(_oldestBlock)
+								return
+
+							}
+
+							_queue.ConfirmedDone(_oldestBlock)
+
+						})
+
+					}(nxt, _queue)
+
+				}
+
 				wp.Submit(func() {
 
 					if !_queue.Put(blockNumber) {
 						return
 					}
 
-					if !FetchBlockByHash(connection.RPC, blockHash, fmt.Sprintf("%d", blockNumber), _db, queue, status) {
+					if !FetchBlockByHash(connection.RPC, blockHash, fmt.Sprintf("%d", blockNumber), _db, redis, queue, status) {
 
-						_queue.Failed(blockNumber)
+						_queue.UnconfirmedFailed(blockNumber)
 						return
 
 					}
 
-					_queue.Done(blockNumber)
+					_queue.UnconfirmedDone(blockNumber)
 
 				})
 

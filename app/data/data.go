@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/go-redis/redis/v8"
 	"gorm.io/gorm"
 )
 
@@ -120,6 +121,12 @@ func (s *StatusHolder) SetLatestBlockNumber(num uint64) {
 
 }
 
+// RedisInfo
+type RedisInfo struct {
+	Client *redis.Client
+	BlockPublishTopic, TxPublishTopic, EventPublishTopic string
+}
+
 // ResultStatus
 type ResultStatus struct {
 	Success uint64
@@ -137,6 +144,7 @@ func (r ResultStatus) Total() uint64 {
 type Job struct {
 	Client *ethclient.Client
 	DB     *gorm.DB
+	Redis  *RedisInfo
 	Block  uint64
 	Status *StatusHolder
 }
