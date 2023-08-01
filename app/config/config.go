@@ -2,7 +2,6 @@ package config
 
 import (
 	"log"
-	"path/filepath"
 	"strconv"
 
 	"github.com/spf13/viper"
@@ -93,23 +92,5 @@ func GetTimeRange() uint64 {
 	}
 
 	return parsedTimeRange
-
-}
-
-// GetSnapshotFile - Reading snapshot file name from
-// config file, if not provided, `snapshot.bin` is used as default file name
-func GetSnapshotFile() string {
-
-	_file := Get("SnapshotFile")
-	if _file == "" {
-		_file = "snapshot.bin"
-	}
-
-	_absFile, err := filepath.Abs(_file)
-	if err != nil {
-		log.Fatalf("[!] Failed to find real path of `%s` : %s\n", _file, err.Error())
-	}
-
-	return _absFile
 
 }
