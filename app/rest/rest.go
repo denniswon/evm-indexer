@@ -73,13 +73,13 @@ func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder, _redisClient *redis.Cl
 		return true
 	}
 
-	// Checking if user has asked to run webserver in production mode or not
+	// Checking if webserver in production mode or not
 	checkIfInProduction := func() bool {
 		return strings.ToLower(cfg.Get("Production")) == "yes"
 	}
 
 	// Running in production/ debug mode depending upon
-	// user choice specified in .env file
+	// config specified in .env file
 	if checkIfInProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	} else {
@@ -919,9 +919,8 @@ func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder, _redisClient *redis.Cl
 	})
 
 	router.POST("/v1/graphql",
-		// Attempting to pass router context, which holds `APIKey`
-		// to graphql handler, so that some accounting job can
-		// be done, before delivering requested piece of data to client
+		// Attempting to pass router context, which so that some job can
+		// be done if needed to (i.e. logging, stats, etc.) before delivering requested piece of data to client
 		func(c *gin.Context) {
 			ctx := context.WithValue(c.Request.Context(), "RouterContextInGraphQL", c)
 			c.Request = c.Request.WithContext(ctx)
@@ -947,7 +946,7 @@ func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder, _redisClient *redis.Cl
 
 	router.GET("/v1/graphql-playground", func(c *gin.Context) {
 
-		if strings.ToLower(cfg.Get("validationcloudGraphQLPlayGround")) != "yes" {
+		if strings.ToLower(cfg.Get("GraphQLPlayGround")) != "yes" {
 
 			c.JSON(http.StatusOK, gin.H{
 				"msg": "GraphQL Playground disabled",

@@ -2,9 +2,6 @@ package db
 
 import (
 	"bytes"
-	"encoding/json"
-	"log"
-	"time"
 
 	"github.com/lib/pq"
 )
@@ -109,73 +106,4 @@ type PackedTransaction struct {
 type PackedBlock struct {
 	Block        *Blocks
 	Transactions []*PackedTransaction
-}
-
-// Users - User address & created api key related info, holder table
-type Users struct {
-	Address   string    `gorm:"column:address;type:char(42);not null;index" json:"address"`
-	APIKey    string    `gorm:"column:apikey;type:char(66);primaryKey" json:"apiKey"`
-	TimeStamp time.Time `gorm:"column:ts;type:timestamp;not null" json:"timeStamp"`
-	Enabled   bool      `gorm:"column:enabled;type:boolean;default:true" json:"enabled"`
-}
-
-// TableName - Overriding default table name
-func (Users) TableName() string {
-	return "users"
-}
-
-// ToJSON - Encodes into JSON, to be supplied when queried for apps created by user
-func (u *Users) ToJSON() []byte {
-	data, err := json.Marshal(u)
-	if err != nil {
-		log.Printf("[!] Failed to encode `validationcloud` apps data to JSON : %s\n", err.Error())
-		return nil
-	}
-
-	return data
-}
-
-// DeliveryHistory - For each request coming from client application
-// we're keeping track of how much data gets sent back in response of their query
-//
-// This is to be used for controlling client application's access
-// to resources they're requesting
-type DeliveryHistory struct {
-	ID         string    `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
-	Client     string    `gorm:"column:client;type:char(42);not null;index"`
-	TimeStamp  time.Time `gorm:"column:ts;type:timestamp;not null;index:,sort:asc"`
-	EndPoint   string    `gorm:"column:endpoint;type:varchar(100);not null"`
-	DataLength uint64    `gorm:"column:datalength;type:bigint;not null"`
-}
-
-// TableName - Overriding default table name
-func (DeliveryHistory) TableName() string {
-	return "delivery_history"
-}
-
-// SubscriptionPlans - Allowed subscription plans, to be auto populated from
-// .plans.json, at application start up
-type SubscriptionPlans struct {
-	ID                  uint32              `gorm:"column:id;type:serial;primaryKey" json:"id"`
-	Name                string              `gorm:"column:name;type:varchar(20);not null;unique" json:"name"`
-	DeliveryCount       uint64              `gorm:"column:deliverycount;type:bigint;not null;unique" json:"deliveryCount"`
-	SubscriptionDetails SubscriptionDetails `gorm:"foreignKey:subscriptionplan"`
-}
-
-// TableName - Overriding default table name
-func (SubscriptionPlans) TableName() string {
-	return "subscription_plans"
-}
-
-// SubscriptionDetails - Keeps track of which ethereum address has subscription to which plan
-// where, `subscriptionplan` refers to `id` in subscription_plans table
-// and 	`address` refers to address in users table
-type SubscriptionDetails struct {
-	Address          string `gorm:"column:address;type:char(42);primaryKey" json:"address"`
-	SubscriptionPlan uint32 `gorm:"column:subscriptionplan;type:int;not null;index" json:"subscriptionPlan"`
-}
-
-// TableName - Overriding default table name
-func (SubscriptionDetails) TableName() string {
-	return "subscription_details"
 }
