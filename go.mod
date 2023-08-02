@@ -5,7 +5,6 @@ go 1.20
 require (
 	github.com/99designs/gqlgen v0.13.0
 	github.com/ethereum/go-ethereum v1.10.17
-	github.com/foolin/goview v0.3.0
 	github.com/gammazero/workerpool v1.1.1
 	github.com/gin-contrib/cors v1.3.1
 	github.com/gin-gonic/gin v1.6.3

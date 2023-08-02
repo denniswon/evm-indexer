@@ -3,7 +3,6 @@ package rest
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
@@ -11,8 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/foolin/goview"
-	"github.com/foolin/goview/supports/ginview"
 	"github.com/gin-contrib/cors"
 
 	cmn "github.com/denniswon/validationcloud/app/common"
@@ -63,25 +60,6 @@ func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder, _redisClient *redis.Cl
 
 	// enabled cors
 	router.Use(cors.Default())
-
-	router.HTMLRender = ginview.New(goview.Config{
-		Root:         "./views",
-		Master:       "layouts/master",
-		Extension:    ".html",
-		DisableCache: true,
-	})
-
-	// Delivering `validationcloud` icon to be shown in web UI
-	router.GET("/favicon.ico", func(c *gin.Context) {
-		data, err := ioutil.ReadFile("./favicon.ico")
-		if err != nil {
-			c.Status(http.StatusNoContent)
-			c.Abort()
-			return
-		}
-
-		c.Data(http.StatusOK, "image/x-icon", data)
-	})
 
 	grp := router.Group("/v1")
 
@@ -906,15 +884,6 @@ func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder, _redisClient *redis.Cl
 		})
 
 	router.GET("/v1/graphql-playground", func(c *gin.Context) {
-
-		if strings.ToLower(cfg.Get("GraphQLPlayGround")) != "yes" {
-
-			c.JSON(http.StatusOK, gin.H{
-				"msg": "GraphQL Playground disabled",
-			})
-			return
-
-		}
 
 		gpg := playground.Handler("validationcloud", "/v1/graphql")
 

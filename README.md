@@ -85,8 +85,8 @@ cp .env.example .env
 - For time span based queries `TimeRange` can be set to put limit on max time span _( in terms of second )_, can be used by clients. Default value 3600 i.e. 1 hour.
 
 ```
-RPCUrl=https://<domain-name>
-WebsocketUrl=wss://<domain-name>
+RPCUrl=https://<rpc-endpoint>
+WebsocketUrl=wss://<websocket-endpoint>
 
 PORT=7000
 
@@ -100,10 +100,7 @@ RedisConnection=tcp
 RedisAddress=x.x.x.x:6379
 RedisPassword=password
 
-Domain=localhost
 Production=yes
-
-GraphQLPlayGround=yes
 
 ConcurrencyFactor=5
 BlockConfirmations=200
