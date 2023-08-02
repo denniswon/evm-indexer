@@ -23,10 +23,6 @@ func bootstrap(configFile string) (*d.BlockChainNodeConnection, *redis.Client, *
 		log.Fatalf("[!] Failed to read `.env` : %s\n", err.Error())
 	}
 
-	if !(cfg.Get("Mode") == "1" || cfg.Get("Mode") == "2" || cfg.Get("Mode") == "3" || cfg.Get("Mode") == "4" || cfg.Get("Mode") == "5") {
-		log.Fatalf("[!] Failed to find `Mode` in configuration file\n")
-	}
-
 	// Maintaining both HTTP & Websocket based connection to blockchain
 	_connection := &d.BlockChainNodeConnection{
 		RPC:       getClient(true),
@@ -45,8 +41,7 @@ func bootstrap(configFile string) (*d.BlockChainNodeConnection, *redis.Client, *
 
 	_db := db.Connect()
 
-	// Passing db handle, to graph package, so that it can be used
-	// for resolving graphQL queries
+	// Passing db handle to graph for resolving graphQL queries
 	graph.GetDatabaseConnection(_db)
 
 	_status := &d.StatusHolder{
@@ -64,7 +59,7 @@ func bootstrap(configFile string) (*d.BlockChainNodeConnection, *redis.Client, *
 		EventPublishTopic: "event",
 	}
 
-	// This is block processor queue
+	// block processor queue
 	_queue := q.New(db.GetCurrentBlockNumber(_db))
 
 	return _connection, _redisClient, _redisInfo, _db, _status, _queue

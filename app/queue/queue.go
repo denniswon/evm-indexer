@@ -422,11 +422,7 @@ func (b *BlockProcessorQueue) Start(ctx context.Context) {
 			block.UnconfirmedProgress = false
 			block.UnconfirmedDone = true
 
-			if config.Get("Mode") == "1" || config.Get("Mode") == "3" {
-				block.ConfirmedDone = b.CanBeConfirmed(req.BlockNumber)
-			} else {
-				block.ConfirmedDone = true // No need to attain this, because we're not putting anything in DB
-			}
+			block.ConfirmedDone = b.CanBeConfirmed(req.BlockNumber)
 
 			block.ResetDelay()
 			block.SetLastAttempted()

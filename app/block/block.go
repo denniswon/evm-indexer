@@ -28,25 +28,22 @@ func ProcessBlockContent(client *ethclient.Client, block *types.Block, _db *gorm
 		// -- 3 step pub/sub attempt
 		//
 		// Attempting to publish whole block data to redis pubsub channel
-		// when eligible `Mode` is set
-		if publishable && (cfg.Get("Mode") == "2" || cfg.Get("Mode") == "3") {
 
-			// 1. Asking queue whether we need to publish block or not
-			if !queue.CanPublish(block.NumberU64()) {
-				return packedBlock, true
-			}
-
-			// 2. Attempting to publish block on Pub/Sub topic
-			if !PublishBlock(packedBlock, redis) {
-				return nil, false
-			}
-
-			// 3. Marking this block as published
-			if !queue.Published(block.NumberU64()) {
-				return nil, false
-			}
-
+		// 1. Asking queue whether we need to publish block or not
+		if !queue.CanPublish(block.NumberU64()) {
+			return packedBlock, true
 		}
+
+		// 2. Attempting to publish block on Pub/Sub topic
+		if !PublishBlock(packedBlock, redis) {
+			return nil, false
+		}
+
+		// 3. Marking this block as published
+		if !queue.Published(block.NumberU64()) {
+			return nil, false
+		}
+
 		// -- done, with publishing on Pub/Sub topic
 
 		return packedBlock, true
@@ -61,19 +58,6 @@ func ProcessBlockContent(client *ethclient.Client, block *types.Block, _db *gorm
 		packedBlock, ok := pubsubWorker(nil)
 		if !ok {
 			return false
-		}
-
-		// If `validationcloud` being run in mode, for only publishing data to
-		// pubsub channel, no need to persist data
-		//
-		// We simply publish & return from execution scope
-		if !(cfg.Get("Mode") == "1" || cfg.Get("Mode") == "3") {
-
-			log.Printf("✅ Block %d with 0 tx(s) [ Took : %s ]\n", block.NumberU64(), time.Now().UTC().Sub(startingAt))
-			status.IncrementBlocksProcessed()
-
-			return true
-
 		}
 
 		// If block doesn't contain any tx, we'll attempt to persist only block
@@ -168,19 +152,6 @@ func ProcessBlockContent(client *ethclient.Client, block *types.Block, _db *gorm
 	packedBlock, ok := pubsubWorker(packedTxs)
 	if !ok {
 		return false
-	}
-
-	// If `validationcloud` being run in mode, for only publishing data to
-	// pubsub channel, no need to persist data
-	//
-	// We simply publish & return from execution scope
-	if !(cfg.Get("Mode") == "1" || cfg.Get("Mode") == "3") {
-
-		log.Printf("✅ Block %d with %d tx(s) [ Took : %s ]\n", block.NumberU64(), block.Transactions().Len(), time.Now().UTC().Sub(startingAt))
-		status.IncrementBlocksProcessed()
-
-		return true
-
 	}
 
 	// If block doesn't contain any tx, we'll attempt to persist only block

@@ -46,33 +46,6 @@ func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder, _redisClient *redis.Cl
 		})
 	}
 
-	// Checking whether this `validationcloud` instance support
-	// historical data query or not
-	checkvMode := func(c *gin.Context) {
-		if !(cfg.Get("Mode") == "1" || cfg.Get("Mode") == "3") {
-			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-				"msg": "Disabled Feature",
-			})
-			return
-		}
-
-		c.Next()
-	}
-
-	// Checking whether this `validationcloud` instance support
-	// real-time data delivery or not, if not letting client know
-	// about it & closing connection
-	checkRealTimeMode := func(conn *websocket.Conn) bool {
-		if !(cfg.Get("Mode") == "2" || cfg.Get("Mode") == "3") {
-			if err := conn.WriteJSON(&ps.SubscriptionResponse{Code: 0, Message: "Disabled Feature"}); err != nil {
-				log.Printf("[!] Failed to write message : %s\n", err.Error())
-			}
-			return false
-		}
-
-		return true
-	}
-
 	// Checking if webserver in production mode or not
 	checkIfInProduction := func() bool {
 		return strings.ToLower(cfg.Get("Production")) == "yes"
@@ -122,14 +95,6 @@ func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder, _redisClient *redis.Cl
 			remaining := (currentBlockNumber + 1) - blockCountInDB
 			elapsed := _status.ElapsedTime()
 
-			if cfg.Get("Mode") == "2" {
-				c.JSON(http.StatusOK, gin.H{
-					"processed": _status.Done(),
-					"elapsed":   elapsed.String(),
-				})
-				return
-			}
-
 			status := fmt.Sprintf("%.2f %%", (float64(blockCountInDB)/float64(currentBlockNumber+1))*100)
 			eta := "0s"
 			if remaining > 0 {
@@ -146,7 +111,7 @@ func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder, _redisClient *redis.Cl
 		})
 
 		// Query block data using block hash/ number/ block number range ( 10 at max )
-		grp.GET("/block", checkvMode, func(c *gin.Context) {
+		grp.GET("/block", func(c *gin.Context) {
 
 			hash := c.Query("hash")
 			number := c.Query("number")
@@ -281,7 +246,7 @@ func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder, _redisClient *redis.Cl
 		})
 
 		// Transaction fetch ( by query params ) request handler
-		grp.GET("/transaction", checkvMode, func(c *gin.Context) {
+		grp.GET("/transaction", func(c *gin.Context) {
 
 			hash := c.Query("hash")
 
@@ -542,7 +507,7 @@ func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder, _redisClient *redis.Cl
 		})
 
 		// Event(s) fetched by query params handler end point
-		grp.GET("/event", checkvMode, func(c *gin.Context) {
+		grp.GET("/event", func(c *gin.Context) {
 
 			fromBlock := c.Query("fromBlock")
 			toBlock := c.Query("toBlock")
@@ -834,10 +799,6 @@ func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder, _redisClient *redis.Cl
 		// Registering websocket connection closing, to be executed when leaving
 		// this function block
 		defer conn.Close()
-
-		if !checkRealTimeMode(conn) {
-			return
-		}
 
 		// To be used for concurrent safe access of
 		// underlying network socket

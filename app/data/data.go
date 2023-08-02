@@ -24,16 +24,14 @@ func (s *SyncState) BlockCountInDB() uint64 {
 	return s.BlockCountAtStartUp + s.NewBlocksInserted
 }
 
-// StatusHolder - Keeps track of progress being made by `validationcloud` over time,
-// which is to be delivered when `/v1/synced` is queried
+// StatusHolder - Keeps track of progress. To be delivered when `/v1/synced` is queried
 type StatusHolder struct {
 	State *SyncState
 	Mutex *sync.RWMutex
 }
 
-// MaxBlockNumberAtStartUp - Attempting to safely read latest block number
-// when `validationcloud` was started, will help us in deciding whether a missing
-// block related notification needs to be sent on a pubsub channel or not
+// MaxBlockNumberAtStartUp - thread safe read latest block number at the time of service start
+// To determine whether a missing block related notification needs to be sent on a pubsub channel or not
 func (s *StatusHolder) MaxBlockNumberAtStartUp() uint64 {
 
 	s.Mutex.RLock()
@@ -53,8 +51,7 @@ func (s *StatusHolder) SetStartedAt() {
 
 }
 
-// IncrementBlocksInserted - Increments number of blocks inserted into DB
-// after `validationcloud` started processing blocks
+// IncrementBlocksInserted - thread safe increments number of blocks inserted into DB since start
 func (s *StatusHolder) IncrementBlocksInserted() {
 
 	s.Mutex.Lock()
@@ -64,8 +61,7 @@ func (s *StatusHolder) IncrementBlocksInserted() {
 
 }
 
-// IncrementBlocksProcessed - Increments number of blocks processed by `validationcloud
-// after it started
+// IncrementBlocksProcessed - thread safe increments number of blocks processed by after it started
 func (s *StatusHolder) IncrementBlocksProcessed() {
 
 	s.Mutex.Lock()
@@ -75,7 +71,7 @@ func (s *StatusHolder) IncrementBlocksProcessed() {
 
 }
 
-// BlockCountInDB - Safely reads currently present blocks in database
+// BlockCountInDB - thread safe reads currently present blocks in db
 func (s *StatusHolder) BlockCountInDB() uint64 {
 
 	s.Mutex.RLock()
@@ -85,7 +81,7 @@ func (s *StatusHolder) BlockCountInDB() uint64 {
 
 }
 
-// ElapsedTime - Uptime of `validationcloud`
+// ElapsedTime - thread safe uptime of the service
 func (s *StatusHolder) ElapsedTime() time.Duration {
 
 	s.Mutex.RLock()
@@ -95,7 +91,7 @@ func (s *StatusHolder) ElapsedTime() time.Duration {
 
 }
 
-// Done - #-of Blocks processed during `validationcloud` uptime i.e. after last time it started
+// Done - thread safe  #-of Blocks processed during uptime i.e. after last time it started
 func (s *StatusHolder) Done() uint64 {
 
 	s.Mutex.RLock()
@@ -105,7 +101,7 @@ func (s *StatusHolder) Done() uint64 {
 
 }
 
-// GetLatestBlockNumber - Attempting to safely read latest block number seen
+// GetLatestBlockNumber - thread safe read latest block number
 func (s *StatusHolder) GetLatestBlockNumber() uint64 {
 
 	s.Mutex.RLock()
@@ -115,7 +111,7 @@ func (s *StatusHolder) GetLatestBlockNumber() uint64 {
 
 }
 
-// SetLatestBlockNumber - Attempting to safely write latest block number
+// SetLatestBlockNumber - thread safe write latest block number
 func (s *StatusHolder) SetLatestBlockNumber(num uint64) {
 
 	s.Mutex.Lock()
@@ -125,30 +121,26 @@ func (s *StatusHolder) SetLatestBlockNumber(num uint64) {
 
 }
 
-// RedisInfo - Holds redis related information in this struct, to be used
-// when passing to functions as argument
+// RedisInfo
 type RedisInfo struct {
-	Client                                               *redis.Client // using this object `validationcloud` will talk to Redis
+	Client *redis.Client
 	BlockPublishTopic, TxPublishTopic, EventPublishTopic string
 }
 
-// ResultStatus - Keeps track of how many operations went successful
-// and how many of them failed
+// ResultStatus
 type ResultStatus struct {
 	Success uint64
 	Failure uint64
 }
 
-// Total - Returns total count of operations which were supposed to be
-// performed
+// Total - Returns total count of operations which were supposed to be performed
 //
-// To be useful when deciding whether all go routines have sent their status i.e. completed
-// their task or not
+// To check whether all go routines have sent their status i.e. completed their tasks or not
 func (r ResultStatus) Total() uint64 {
 	return r.Success + r.Failure
 }
 
-// Job - For running a block fetching job, these are all the information which are required
+// Job - For running a block fetching job
 type Job struct {
 	Client *ethclient.Client
 	DB     *gorm.DB

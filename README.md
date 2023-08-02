@@ -103,7 +103,6 @@ RedisPassword=password
 Domain=localhost
 Production=yes
 
-Mode=3
 GraphQLPlayGround=yes
 
 ConcurrencyFactor=5

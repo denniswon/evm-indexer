@@ -95,33 +95,31 @@ func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, 
 				// Uses Redis backed queue for fetching pending block hash & retries
 				go RetryQueueManager(connection.RPC, _db, redis, queue, status)
 
-				// If historical data query features are enabled
-				// only then we need to sync to latest state of block chain
-				if cfg.Get("Mode") == "1" || cfg.Get("Mode") == "3" {
+				// sync to latest state of block chain
 
-					// Starting syncer in another thread, where it'll keep fetching
-					// blocks from highest block number it fetched last time to current network block number
-					// i.e. trying to fill up gap, which was caused when `validationcloud` was offline
+				// Starting syncer in another thread, where it'll keep fetching
+				// blocks from highest block number it fetched last time to current network block number
+				// i.e. trying to fill up gap, which was caused when `validationcloud` was offline
 
-					// Upper limit of syncing, in terms of block number
-					from := header.Number.Uint64() - 1
-					// Lower limit of syncing, in terms of block number
-					//
-					// Subtracting confirmation required block number count, due to
-					// the fact it might be case those block contents might have changed due to
-					// some reorg, in the time duration, when `validationcloud` was offline
-					//
-					// So we've to take a look at those
-					var to uint64
-					if status.MaxBlockNumberAtStartUp() < cfg.GetBlockConfirmations() {
-						to = 0
-					} else {
-						to = status.MaxBlockNumberAtStartUp() - cfg.GetBlockConfirmations()
-					}
-
-					go SyncBlocksByRange(connection.RPC, _db, redis, queue, from, to, status)
-
+				// Upper limit of syncing, in terms of block number
+				from := header.Number.Uint64() - 1
+				// Lower limit of syncing, in terms of block number
+				//
+				// Subtracting confirmation required block number count, due to
+				// the fact it might be case those block contents might have changed due to
+				// some reorg, in the time duration, when `validationcloud` was offline
+				//
+				// So we've to take a look at those
+				var to uint64
+				if status.MaxBlockNumberAtStartUp() < cfg.GetBlockConfirmations() {
+					to = 0
+				} else {
+					to = status.MaxBlockNumberAtStartUp() - cfg.GetBlockConfirmations()
 				}
+
+				go SyncBlocksByRange(connection.RPC, _db, redis, queue, from, to, status)
+
+
 				// Making sure that when next latest block header is received, it'll not
 				// start another syncer
 				first = false
@@ -140,40 +138,32 @@ func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, 
 			// so that it gets processed immediately
 			func(blockHash common.Hash, blockNumber uint64, _queue *q.BlockProcessorQueue) {
 
-				// When only processing blocks in real-time mode
-				// no need to check what's present in unfinalized block number queue
-				// because no finality feature is provided for blocks on websocket based
-				// real-time subscription mechanism
-				if cfg.Get("Mode") == "1" || cfg.Get("Mode") == "3" {
+				// Next block which can be attempted to be checked
+				// while finally considering it confirmed & put into DB
+				if nxt, ok := _queue.ConfirmedNext(); ok {
 
-					// Next block which can be attempted to be checked
-					// while finally considering it confirmed & put into DB
-					if nxt, ok := _queue.ConfirmedNext(); ok {
+					log.Printf("🔅 Processing finalised block %d [ Latest Block : %d ]\n", nxt, status.GetLatestBlockNumber())
 
-						log.Printf("🔅 Processing finalised block %d [ Latest Block : %d ]\n", nxt, status.GetLatestBlockNumber())
+					// Taking `oldest` variable's copy in local scope of closure, so that during
+					// iteration over queue elements, none of them get missed, becuase we're
+					// dealing with concurrent system, where previous `oldest` can be overwritten
+					// by new `oldest` & we end up missing a block
+					func(_oldestBlock uint64, _queue *q.BlockProcessorQueue) {
 
-						// Taking `oldest` variable's copy in local scope of closure, so that during
-						// iteration over queue elements, none of them get missed, becuase we're
-						// dealing with concurrent system, where previous `oldest` can be overwritten
-						// by new `oldest` & we end up missing a block
-						func(_oldestBlock uint64, _queue *q.BlockProcessorQueue) {
+						wp.Submit(func() {
 
-							wp.Submit(func() {
+							if !FetchBlockByNumber(connection.RPC, _oldestBlock, _db, redis, false, queue, status) {
 
-								if !FetchBlockByNumber(connection.RPC, _oldestBlock, _db, redis, false, queue, status) {
+								_queue.ConfirmedFailed(_oldestBlock)
+								return
 
-									_queue.ConfirmedFailed(_oldestBlock)
-									return
+							}
 
-								}
+							_queue.ConfirmedDone(_oldestBlock)
 
-								_queue.ConfirmedDone(_oldestBlock)
+						})
 
-							})
-
-						}(nxt, _queue)
-
-					}
+					}(nxt, _queue)
 
 				}
 
