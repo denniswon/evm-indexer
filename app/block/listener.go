@@ -132,7 +132,7 @@ func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, 
 
 						wp.Submit(func() {
 
-							if !FetchBlockByNumber(connection.RPC, _oldestBlock, _db, redis, queue, status) {
+							if !FetchBlockByNumber(connection.RPC, _oldestBlock, _db, redis, false, queue, status) {
 
 								_queue.ConfirmedFailed(_oldestBlock)
 								return

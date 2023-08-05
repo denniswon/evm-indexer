@@ -13,8 +13,10 @@ import (
 // the task until it reach the limit. By using limited pool of workers and keep the task on the queue,
 // we can reduce the burst of CPU and memory since the task will wait on the queue until the the worker pull the task.
 
-// Block - Keeps track of single block i.e. how many times attempted till date, last attempted to process whether block data
-// has been published on pubsub topic or not, is block processing currently
+// Block - Keeps track of single block i.e. how many
+// times attempted till date, last attempted to process
+// whether block data has been published on pubsub topic or not,
+// is block processing currently
 type Block struct {
 	UnconfirmedProgress bool // 1. Joins
 	Published           bool // 2. Pub/Sub publishing

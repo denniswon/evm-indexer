@@ -45,7 +45,7 @@ func RetryQueueManager(client *ethclient.Client, _db *gorm.DB, redis *d.RedisInf
 
 			wp.Submit(func() {
 
-				if !FetchBlockByNumber(client, _blockNumber, _db, redis, queue, status) {
+				if !FetchBlockByNumber(client, _blockNumber, _db, redis, true, queue, status) {
 
 					queue.UnconfirmedFailed(_blockNumber)
 					return

@@ -16,14 +16,48 @@ import (
 )
 
 // ProcessBlockContent - Processes everything inside this block i.e. block data, tx data, event data
-func ProcessBlockContent(client *ethclient.Client, block *types.Block, _db *gorm.DB, redis *d.RedisInfo, queue *q.BlockProcessorQueue, status *d.StatusHolder, startingAt time.Time) bool {
+func ProcessBlockContent(client *ethclient.Client, block *types.Block, _db *gorm.DB, redis *d.RedisInfo, publishable bool, queue *q.BlockProcessorQueue, status *d.StatusHolder, startingAt time.Time) bool {
+
+	// Closure managing publishing whole block data i.e. block header, txn(s), event logs on redis pubsub channel
+	pubsubWorker := func(txns []*db.PackedTransaction) (*db.PackedBlock, bool) {
+
+		// Constructing block data to published & persisted
+		packedBlock := BuildPackedBlock(block, txns)
+
+		// -- 3 step pub/sub attempt
+		//
+		// Attempting to publish whole block data to redis pubsub channel
+
+		// 1. Asking queue whether we need to publish block or not
+		if !queue.CanPublish(block.NumberU64()) {
+			return packedBlock, true
+		}
+
+		// 2. Attempting to publish block on Pub/Sub topic
+		if !PublishBlock(packedBlock, redis) {
+			return nil, false
+		}
+
+		// 3. Marking this block as published
+		if !queue.Published(block.NumberU64()) {
+			return nil, false
+		}
+
+		// -- done, with publishing on Pub/Sub topic
+
+		return packedBlock, true
+
+	}
 
 	if block.Transactions().Len() == 0 {
 
 		// Constructing block data to be persisted
 		//
 		// This is what we just published on pubsub channel
-		packedBlock := BuildPackedBlock(block, nil)
+		packedBlock, ok := pubsubWorker(nil)
+		if !ok {
+			return false
+		}
 
 		// If block doesn't contain any tx, we'll attempt to persist only block
 		if err := db.StoreBlock(_db, packedBlock, status, queue); err != nil {
@@ -55,7 +89,7 @@ func ProcessBlockContent(client *ethclient.Client, block *types.Block, _db *gorm
 		// Concurrently trying to fetch multiple tx(s) present in block
 		// and expecting their return value to be published on shared channel
 		//
-		// Which is being read
+		// Which is being read 👇
 		func(tx *types.Transaction) {
 			wp.Submit(func() {
 
@@ -64,6 +98,7 @@ func ProcessBlockContent(client *ethclient.Client, block *types.Block, _db *gorm
 					tx,
 					_db,
 					redis,
+					publishable,
 					status,
 					returnValChan)
 
@@ -112,7 +147,10 @@ func ProcessBlockContent(client *ethclient.Client, block *types.Block, _db *gorm
 	// Constructing block data to be persisted
 	//
 	// This is what we just published on pubsub channel
-	packedBlock := BuildPackedBlock(block, packedTxs)
+	packedBlock, ok := pubsubWorker(packedTxs)
+	if !ok {
+		return false
+	}
 
 	// If block doesn't contain any tx, we'll attempt to persist only block
 	if err := db.StoreBlock(_db, packedBlock, status, queue); err != nil {

@@ -29,12 +29,12 @@ func FetchBlockByHash(client *ethclient.Client, hash common.Hash, number string,
 
 	}
 
-	return ProcessBlockContent(client, block, _db, redis, queue, _status, startingAt)
+	return ProcessBlockContent(client, block, _db, redis, true, queue, _status, startingAt)
 
 }
 
 // FetchBlockByNumber - Fetching block content using block number
-func FetchBlockByNumber(client *ethclient.Client, number uint64, _db *gorm.DB, redis *d.RedisInfo, queue *q.BlockProcessorQueue, _status *d.StatusHolder) bool {
+func FetchBlockByNumber(client *ethclient.Client, number uint64, _db *gorm.DB, redis *d.RedisInfo, publishable bool, queue *q.BlockProcessorQueue, _status *d.StatusHolder) bool {
 
 	// Starting block processing at
 	startingAt := time.Now().UTC()
@@ -50,7 +50,7 @@ func FetchBlockByNumber(client *ethclient.Client, number uint64, _db *gorm.DB, r
 
 	}
 
-	return ProcessBlockContent(client, block, _db, redis, queue, _status, startingAt)
+	return ProcessBlockContent(client, block, _db, redis, publishable, queue, _status, startingAt)
 
 }
 
@@ -101,3 +101,4 @@ func FetchTransactionByHash(client *ethclient.Client, block *types.Block, tx *ty
 	// into database
 	returnValChan <- BuildPackedTx(tx, sender, receipt)
 }
+
