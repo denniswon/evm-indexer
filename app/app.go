@@ -20,7 +20,7 @@ func Run(configFile string) {
 	_connection, _redisClient, _redisInfo, _db, _status, _queue := bootstrap(configFile)
 
 	// Attempting to listen to Ctrl+C signal
-	// and when received gracefully shutting down `validationcloud`
+	// and when received gracefully shutting down the service
 	interruptChan := make(chan os.Signal, 1)
 	signal.Notify(interruptChan, syscall.SIGTERM, syscall.SIGINT)
 
@@ -56,7 +56,7 @@ func Run(configFile string) {
 		}
 
 		// Stopping process
-		log.Print(color.Magenta.Sprintf("\n[+] Gracefully shut down `validationcloud`"))
+		log.Print(color.Magenta.Sprintf("\n[+] Gracefully shut down the service"))
 		os.Exit(0)
 
 	}()

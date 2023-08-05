@@ -17,14 +17,10 @@ import (
 )
 
 // FindMissingBlocksInRange - Given ascending ordered block numbers read from DB
-// attempts to find out which numbers are missing in [from, to] range
-// where both ends are inclusive
+// attempts to find out which numbers are missing in [from, to] range inclusive
 func FindMissingBlocksInRange(found []uint64, from uint64, to uint64) []uint64 {
 
-	// creating slice with backing array of larger size
-	// to avoid potential memory allocation during iteration
-	// over loop
-	absent := make([]uint64, 0, to-from+1)
+	absent := make([]uint64, 0, to - from + 1)
 
 	for b := from; b <= to; b++ {
 
@@ -65,41 +61,37 @@ func Syncer(client *ethclient.Client, _db *gorm.DB, redis *d.RedisInfo, queue *q
 		}, queue)
 	}
 
-	// attempting to fetch X blocks ( max ) at a time, by range
-	//
-	// @note This can be improved
+	// attempting to fetch X blocks at a time
 	var step uint64 = 10000
 
 	for i := fromBlock; i <= toBlock; i += step {
 
-		toShouldbe := i + step - 1
-		if toShouldbe > toBlock {
-			toShouldbe = toBlock
+		to := i + step - 1
+		if to > toBlock {
+			to = toBlock
 		}
 
-		blocks := db.GetAllBlockNumbersInRange(_db, i, toShouldbe)
+		blocks := db.GetAllBlockNumbersInRange(_db, i, to)
 
 		// No blocks present in DB, in queried range
 		if len(blocks) == 0 {
 
-			// So submitting all of them to job processor queue
-			for j := i; j <= toShouldbe; j++ {
-
+			// submit all of them to job processor queue
+			for j := i; j <= to; j++ {
 				job(j)
-
 			}
 			continue
 
 		}
 
-		// All blocks in range present in DB ✅
-		if toShouldbe-i+1 == uint64(len(blocks)) {
+		// All blocks in range present in DB
+		if to - i + 1 == uint64(len(blocks)) {
 			continue
 		}
 
 		// Some blocks are missing in range, attempting to find them
 		// and pushing their processing request to job queue
-		for _, v := range FindMissingBlocksInRange(blocks, i, toShouldbe) {
+		for _, v := range FindMissingBlocksInRange(blocks, i, to) {
 			job(v)
 		}
 
@@ -135,7 +127,7 @@ func SyncBlocksByRange(client *ethclient.Client, _db *gorm.DB, redis *d.RedisInf
 		})
 	}
 
-	log.Printf("✅ Starting block syncer\n")
+	log.Printf("Starting block syncer\n")
 
 	if fromBlock < toBlock {
 		Syncer(client, _db, redis, queue, fromBlock, toBlock, status, job)
@@ -143,7 +135,7 @@ func SyncBlocksByRange(client *ethclient.Client, _db *gorm.DB, redis *d.RedisInf
 		Syncer(client, _db, redis, queue, toBlock, fromBlock, status, job)
 	}
 
-	log.Printf("✅ Stopping block syncer\n")
+	log.Printf("Stopping block syncer\n")
 
 	// Once completed first iteration of processing blocks upto last time where it left
 	// off, we're going to start worker to look at DB & decide which blocks are missing
@@ -161,7 +153,7 @@ func SyncMissingBlocksInDB(client *ethclient.Client, _db *gorm.DB, redis *d.Redi
 
 	for {
 
-		log.Printf("✅ Starting missing block finder\n")
+		log.Printf("Starting missing block finder\n")
 
 		currentBlockNumber := db.GetCurrentBlockNumber(_db)
 
@@ -169,9 +161,9 @@ func SyncMissingBlocksInDB(client *ethclient.Client, _db *gorm.DB, redis *d.Redi
 		blockCount := status.BlockCountInDB()
 
 		// If all blocks present in between 0 to latest block in network
-		// `validationcloud` sleeps for 1 minute & again get to work
+		// the service sleeps for 1 minute & again get to work
 		if currentBlockNumber+1 == blockCount {
-			log.Printf("✅ No missing blocks found\n")
+			log.Printf("No missing blocks found\n")
 
 			<-time.After(time.Duration(1) * time.Minute)
 			continue
@@ -207,7 +199,7 @@ func SyncMissingBlocksInDB(client *ethclient.Client, _db *gorm.DB, redis *d.Redi
 
 		Syncer(client, _db, redis, queue, 0, currentBlockNumber, status, job)
 
-		log.Printf("✅ Stopping missing block finder\n")
+		log.Printf("Stopping missing block finder\n")
 		<-time.After(time.Duration(1) * time.Minute)
 
 	}

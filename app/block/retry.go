@@ -13,19 +13,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// RetryQueueManager - Pop oldest block number from Redis backed retry
-// queue & try to fetch it in different go routine
+// RetryQueueManager - Pop oldest block number from Redis backed retry queue
+// and try to fetch it in different go routine
 //
-// Sleeps for 1000 milliseconds
-//
-// Keeps repeating
+// Sleeps for 500 milliseconds then repeat
 func RetryQueueManager(client *ethclient.Client, _db *gorm.DB, redis *d.RedisInfo, queue *q.BlockProcessorQueue, status *d.StatusHolder) {
 	sleep := func() {
 		time.Sleep(time.Duration(512) * time.Millisecond)
 	}
 
-	// Creating worker pool and submitting jobs as soon as it's determined
-	// there's `to be processed` blocks in retry queue
+	// Creating worker pool and submitting jobs when there's `to be processed` blocks in retry queue
 	wp := workerpool.New(runtime.NumCPU() * int(cfg.GetConcurrencyFactor()))
 	defer wp.Stop()
 

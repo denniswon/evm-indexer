@@ -15,35 +15,32 @@ import (
 	"gorm.io/gorm"
 )
 
-// SubscribeToNewBlocks - Listen for event when new block header is
-// available, then fetch block content ( including all transactions )
-// in different worker
+// SubscribeToNewBlocks - Listen for new block header available, then fetch block content
+// including all transactions in different worker
 func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, status *d.StatusHolder, redis *d.RedisInfo, queue *q.BlockProcessorQueue) {
 	headerChan := make(chan *types.Header)
 
 	subs, err := connection.Websocket.SubscribeNewHead(context.Background(), headerChan)
 	if err != nil {
-		log.Fatalf("❗️ Failed to subscribe to block headers : %s\n", err.Error())
+		log.Fatalf("Failed to subscribe to block headers : %s\n", err.Error())
 	}
 	// Scheduling unsubscribe, to be executed when end of this execution scope is reached
 	defer subs.Unsubscribe()
 
-	// Flag to check for whether this is first time block header being received or not
-	//
-	// If yes, we'll start syncer to fetch all block in range (last block processed, latest block)
+	// if first time block header being received, start syncer to fetch all block in range (last block processed, latest block)
 	first := true
-	// Creating a job queue of size `#-of CPUs present in machine`
-	// where block fetching requests to be submitted
+	// Creating a job queue of size `#-of CPUs present in machine` * concurrency factor where block fetching requests are submitted to
+	// There is no upper limit on the number of tasks queued, other than the limits of system resources
+	// If the number of inbound tasks is too many to even queue for pending processing, then we should distribute workload over multiple systems,
+	// and/or storing input for pending processing in intermediate storage such as a distributed message queue, etc.
 	wp := workerpool.New(runtime.NumCPU() * int(cfg.GetConcurrencyFactor()))
-	// Scheduling worker pool closing, to be called,
-	// when returning from this execution scope i.e. function
 	defer wp.Stop()
 
 	for {
 		select {
 		case err := <-subs.Err():
 
-			log.Fatalf("❗️ Listener stopped : %s\n", err.Error())
+			log.Fatalf("Listener stopped : %s\n", err.Error())
 
 		case header := <-headerChan:
 
@@ -51,34 +48,27 @@ func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, 
 			// should be greater than max block number obtained from DB
 			if first && !(header.Number.Uint64() > status.MaxBlockNumberAtStartUp()) {
 
-				log.Fatalf("❗️ Bad block received : expected > `%d`\n", status.MaxBlockNumberAtStartUp())
+				log.Fatalf("Bad block received : expected > `%d`\n", status.MaxBlockNumberAtStartUp())
 
 			}
 
-			// At any iteration other than first one, if received block number
-			// is more than latest block number + 1, it's definite that we've some
-			// block (  >=1 ) missed & the RPC node we're relying on might be feeding us with
-			// wrong data
-			//
-			// It's better stop relying on it, we crash the program
-			// @note This is not the state-of-the art solution, but this is it, as of now
-			// It can be improved.
-			if !first && header.Number.Uint64() > status.GetLatestBlockNumber()+1 {
+			// At any iteration other than first one, if received block number > latest block number + 1,
+			// something is wrong, mayne the rpc endpoint itself. crash the program for now
+			if !first && header.Number.Uint64() > status.GetLatestBlockNumber() + 1 {
 
-				log.Fatalf("❗️ Bad block received %d, expected %d\n", header.Number.Uint64(), status.GetLatestBlockNumber())
+				log.Fatalf("Bad block received %d, expected %d\n", header.Number.Uint64(), status.GetLatestBlockNumber())
 
 			}
 
-			// At any iteration other than first one, if received block number
-			// not exactly current latest block number + 1, then it's probably one
-			// reorganization, we'll attempt to process this new block
-			if !first && !(header.Number.Uint64() == status.GetLatestBlockNumber()+1) {
+			// At any iteration other than first one, if received block number not exactly current latest block number + 1,
+			// then it likely be chain reorganization, we'll attempt to process this new block
+			if !first && !(header.Number.Uint64() == status.GetLatestBlockNumber() + 1) {
 
-				log.Printf("🔅 Received block %d again, expected %d\n", header.Number.Uint64(), status.GetLatestBlockNumber()+1)
+				log.Printf("Received block %d again, expected %d\n", header.Number.Uint64(), status.GetLatestBlockNumber() + 1)
 
 			} else {
 
-				log.Printf("🔆 Received block %d\n", header.Number.Uint64())
+				log.Printf("Received block %d\n", header.Number.Uint64())
 
 			}
 
@@ -90,7 +80,7 @@ func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, 
 				// Starting now, to be used for calculating system performance, uptime etc.
 				status.SetStartedAt()
 
-				// Starting go routine for fetching blocks `validationcloud` failed to process in previous attempt
+				// Starting go routine for fetching blocks failed to process in previous attempt
 				//
 				// Uses Redis backed queue for fetching pending block hash & retries
 				go RetryQueueManager(connection.RPC, _db, redis, queue, status)
@@ -99,7 +89,7 @@ func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, 
 
 				// Starting syncer in another thread, where it'll keep fetching
 				// blocks from highest block number it fetched last time to current network block number
-				// i.e. trying to fill up gap, which was caused when `validationcloud` was offline
+				// i.e. trying to fill up gap, which was caused when the service was offline
 
 				// Upper limit of syncing, in terms of block number
 				from := header.Number.Uint64() - 1
@@ -107,9 +97,7 @@ func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, 
 				//
 				// Subtracting confirmation required block number count, due to
 				// the fact it might be case those block contents might have changed due to
-				// some reorg, in the time duration, when `validationcloud` was offline
-				//
-				// So we've to take a look at those
+				// some reorg, in the time duration, when the service was offline
 				var to uint64
 				if status.MaxBlockNumberAtStartUp() < cfg.GetBlockConfirmations() {
 					to = 0
@@ -119,23 +107,16 @@ func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, 
 
 				go SyncBlocksByRange(connection.RPC, _db, redis, queue, from, to, status)
 
-
 				// Making sure that when next latest block header is received, it'll not
 				// start another syncer
 				first = false
 
 			}
 
-			// As soon as new block is mined, `validationcloud` will try to fetch it
-			// and that job will be submitted in job queue
+			// As soon as new block is mined, try to fetch it and that job will be submitted in job queue
 			//
-			// Putting it in a different function scope for safety purpose
-			// so that job submitter gets its own copy of block number & block hash,
-			// otherwise it might get wrong info, if new block gets mined very soon &
-			// this job is not yet submitted
-			//
-			// Though it'll be picked up sometime in future ( by missing block finder ), but it can be safely handled now
-			// so that it gets processed immediately
+			// Putting it in a different function scope so that job submitter gets its own copy of block number & block hash,
+			// otherwise it might get wrong info, if new block gets mined very soon & this job is not yet submitted
 			func(blockHash common.Hash, blockNumber uint64, _queue *q.BlockProcessorQueue) {
 
 				// Next block which can be attempted to be checked
@@ -144,10 +125,9 @@ func SubscribeToNewBlocks(connection *d.BlockChainNodeConnection, _db *gorm.DB, 
 
 					log.Printf("🔅 Processing finalised block %d [ Latest Block : %d ]\n", nxt, status.GetLatestBlockNumber())
 
-					// Taking `oldest` variable's copy in local scope of closure, so that during
-					// iteration over queue elements, none of them get missed, becuase we're
-					// dealing with concurrent system, where previous `oldest` can be overwritten
-					// by new `oldest` & we end up missing a block
+					// Note, we are taking `next` variable's copy in local scope of closure, so that during
+					// iteration over queue elements, none of them get missed, becuase in a concurrent system,
+					// previous `next` can be overwritten by new `next` & we can end up missing a block
 					func(_oldestBlock uint64, _queue *q.BlockProcessorQueue) {
 
 						wp.Submit(func() {

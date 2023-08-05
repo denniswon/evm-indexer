@@ -41,7 +41,7 @@ func GetCurrentOldestBlockNumber(db *gorm.DB) uint64 {
 }
 
 // GetCurrentBlockNumber - Returns highest block number, which got processed
-// by `validationcloud`
+// by the service
 func GetCurrentBlockNumber(db *gorm.DB) uint64 {
 	var number uint64
 
@@ -604,7 +604,7 @@ func GetEventByBlockHashAndLogIndex(db *gorm.DB, hash common.Hash, index uint) *
 func GetEventByBlockNumberAndLogIndex(db *gorm.DB, number uint64, index uint) *data.Event {
 
 	block := GetBlockByNumber(db, number)
-	// seems bad block number or may be `validationcloud`
+	// seems bad block number or may be the service
 	// hasn't synced upto this point or missed
 	// this block some how
 	if block == nil {

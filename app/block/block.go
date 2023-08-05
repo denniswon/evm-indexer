@@ -18,8 +18,7 @@ import (
 // ProcessBlockContent - Processes everything inside this block i.e. block data, tx data, event data
 func ProcessBlockContent(client *ethclient.Client, block *types.Block, _db *gorm.DB, redis *d.RedisInfo, publishable bool, queue *q.BlockProcessorQueue, status *d.StatusHolder, startingAt time.Time) bool {
 
-	// Closure managing publishing whole block data i.e. block header, txn(s), event logs
-	// on redis pubsub channel
+	// Closure managing publishing whole block data i.e. block header, txn(s), event logs on redis pubsub channel
 	pubsubWorker := func(txns []*db.PackedTransaction) (*db.PackedBlock, bool) {
 
 		// Constructing block data to published & persisted
@@ -63,13 +62,13 @@ func ProcessBlockContent(client *ethclient.Client, block *types.Block, _db *gorm
 		// If block doesn't contain any tx, we'll attempt to persist only block
 		if err := db.StoreBlock(_db, packedBlock, status, queue); err != nil {
 
-			log.Printf("❗️ Failed to process block %d : %s\n", block.NumberU64(), err.Error())
+			log.Printf("Failed to process block %d : %s\n", block.NumberU64(), err.Error())
 			return false
 
 		}
 
 		// Successfully processed block
-		log.Printf("✅ Block %d with 0 tx(s) [ Took : %s ]\n", block.NumberU64(), time.Now().UTC().Sub(startingAt))
+		log.Printf("Block %d with 0 tx(s) [ Took : %s ]\n", block.NumberU64(), time.Now().UTC().Sub(startingAt))
 		status.IncrementBlocksProcessed()
 
 		return true
@@ -78,11 +77,10 @@ func ProcessBlockContent(client *ethclient.Client, block *types.Block, _db *gorm
 
 	// Communication channel to be shared between multiple executing go routines
 	// which are trying to fetch all tx(s) present in block, concurrently
-	returnValChan := make(chan *db.PackedTransaction, runtime.NumCPU()*int(cfg.GetConcurrencyFactor()))
+	returnValChan := make(chan *db.PackedTransaction, runtime.NumCPU() * int(cfg.GetConcurrencyFactor()))
 
 	// -- Tx processing starting
-	// Creating job processor queue
-	// which will process all tx(s), concurrently
+	// Creating job processor queue which will process all tx(s), concurrently
 	wp := workerpool.New(runtime.NumCPU() * int(cfg.GetConcurrencyFactor()))
 
 	// Concurrently trying to process all tx(s) for this block, in hope of better performance
@@ -157,13 +155,13 @@ func ProcessBlockContent(client *ethclient.Client, block *types.Block, _db *gorm
 	// If block doesn't contain any tx, we'll attempt to persist only block
 	if err := db.StoreBlock(_db, packedBlock, status, queue); err != nil {
 
-		log.Printf("❗️ Failed to process block %d : %s\n", block.NumberU64(), err.Error())
+		log.Printf("Failed to process block %d : %s\n", block.NumberU64(), err.Error())
 		return false
 
 	}
 
 	// Successfully processed block
-	log.Printf("✅ Block %d with %d tx(s) [ Took : %s ]\n", block.NumberU64(), block.Transactions().Len(), time.Now().UTC().Sub(startingAt))
+	log.Printf("Block %d with %d tx(s) [ Took : %s ]\n", block.NumberU64(), block.Transactions().Len(), time.Now().UTC().Sub(startingAt))
 
 	status.IncrementBlocksProcessed()
 	return true

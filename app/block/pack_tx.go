@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-// BuildPackedTx - Putting all information, `validationcloud` will keep for one tx
+// BuildPackedTx - Putting all information, the service will keep for one tx
 // into a single structure, so that it becomes easier to pass to & from functions
 func BuildPackedTx(tx *types.Transaction, sender common.Address, receipt *types.Receipt) *db.PackedTransaction {
 

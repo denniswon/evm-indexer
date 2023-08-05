@@ -65,7 +65,7 @@ func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder, _redisClient *redis.Cl
 
 	{
 
-		// For checking `validationcloud`'s syncing status
+		// For checking the service's syncing status
 		grp.GET("/synced", func(c *gin.Context) {
 
 			currentBlockNumber := _status.GetLatestBlockNumber()
@@ -788,7 +788,7 @@ func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder, _redisClient *redis.Cl
 		// Log it when closing connection
 		defer func() {
 
-			log.Printf("[✅] Closing websocket connection\n",)
+			log.Printf("[] Closing websocket connection\n",)
 
 		}()
 

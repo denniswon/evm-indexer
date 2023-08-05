@@ -58,7 +58,7 @@ func StoreBlock(dbWOTx *gorm.DB, block *PackedBlock, status *d.StatusHolder, que
 
 		} else {
 
-			log.Printf("[+] Block %d already present in DB, similar ✅\n", block.Block.Number)
+			log.Printf("[+] Block %d already present in DB, similar \n", block.Block.Number)
 			return nil
 
 		}

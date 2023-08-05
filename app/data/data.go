@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// SyncState - Whether `validationcloud` is synced with blockchain or not
+// SyncState - Whether the service is synced with blockchain or not
 type SyncState struct {
 	Done                    uint64
 	StartedAt               time.Time

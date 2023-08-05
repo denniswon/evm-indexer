@@ -51,7 +51,7 @@ func PublishEvent(blockNumber uint64, event *db.Events, redis *d.RedisInfo) bool
 
 	if err := redis.Client.Publish(context.Background(), redis.EventPublishTopic, data).Err(); err != nil {
 
-		log.Printf("❗️ Failed to publish event from block %d : %s\n", blockNumber, err.Error())
+		log.Printf("Failed to publish event from block %d : %s\n", blockNumber, err.Error())
 		return false
 
 	}

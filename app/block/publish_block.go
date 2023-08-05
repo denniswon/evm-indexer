@@ -35,7 +35,7 @@ func PublishBlock(block *db.PackedBlock, redis *d.RedisInfo) bool {
 
 	if err := redis.Client.Publish(context.Background(), redis.BlockPublishTopic, _block).Err(); err != nil {
 
-		log.Printf("❗️ Failed to publish block %d : %s\n", block.Block.Number, err.Error())
+		log.Printf("Failed to publish block %d : %s\n", block.Block.Number, err.Error())
 		return false
 
 	}
