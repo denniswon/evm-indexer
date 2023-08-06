@@ -71,20 +71,14 @@ func FetchTransactionByHash(client *ethclient.Client, block *types.Block, tx *ty
 
 	// log.Printf("Transaction receipt for %s %v\n", tx.Hash().Hex(), receipt)
 
-	chainID, err := client.NetworkID(context.Background())
-	if err != nil {
-		log.Printf("Failed to get network Id [ block : %d ] : %s\n", block.NumberU64(), err.Error())
-		// Passing nil, to denote, failed to fetch all tx data from blockchain node
-		returnValChan <- nil
-	}
-
-	msg, err := tx.AsMessage(types.LatestSignerForChainID(chainID),big.NewInt(1))
+	// Supports EIP-2930 and EIP-2718 and EIP-1559 and EIP-155 and legacy transactions
+    message, err := tx.AsMessage(types.LatestSignerForChainID(tx.ChainId()), block.BaseFee())
 	if err != nil {
 		log.Printf("Failed to get tx as msg[ block : %d ] : %s\n", block.NumberU64(), err.Error())
 		// Passing nil, to denote, failed to fetch all tx data from blockchain node
 		returnValChan <- nil
 	}
-	sender := common.HexToAddress(msg.From().Hex())
+	sender := message.From()
 
 	// Weird: issue with getting transaction sender using ethclient
 
