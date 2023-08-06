@@ -84,6 +84,7 @@ func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder, _redisClient *redis.Cl
 				"processed": _status.Done(),
 				"elapsed":   elapsed.String(),
 				"eta":       eta,
+				"status":	_status.State,
 			})
 
 		})

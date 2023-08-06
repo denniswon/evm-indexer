@@ -73,7 +73,8 @@ cp .env.example .env
 ```
 
 ### .env configuration
-- For testing historical data query using browser based GraphQL Playground, set `EtteGraphQLPlayGround` to `yes` in config file
+
+- For testing historical data query using browser based GraphQL Playground, set `GraphQLPlayGround` to `yes` in config file
 
 - For processing block(s)/ tx(s) concurrently, it'll create `ConcurrencyFactor * #-of CPUs on machine` workers, who will pick up jobs submitted to them.
   - If nothing is specified, it defaults to 1 & assuming you're running on machine with 4 CPUs, it'll spawn worker pool of size 4. More than configured number of jobs can be submitted, only 4 can be running at max.
@@ -127,7 +128,7 @@ make run
 
 - Database migration taken care of during application start up.
 
-- Syncing `ette` with latest state of blockchain takes time. Current sync state can be queried
+- Syncing with latest state of blockchain takes time. Current sync state can be queried
 
 ```bash
 curl -s localhost:7000/v1/synced | jq

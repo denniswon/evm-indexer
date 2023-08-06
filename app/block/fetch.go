@@ -61,7 +61,7 @@ func FetchTransactionByHash(client *ethclient.Client, block *types.Block, tx *ty
 
 	receipt, err := client.TransactionReceipt(context.Background(), tx.Hash())
 	if err != nil {
-		log.Printf("Failed to fetch tx receipt [ block : %d ] : %s\n", block.NumberU64(), err.Error())
+		// log.Printf("Failed to fetch tx receipt for %s [ block : %d ] : %s\n", tx.Hash().Hex(), block.NumberU64(), err.Error())
 
 		// Passing nil, to denote, failed to fetch all tx data
 		// from blockchain node
@@ -69,20 +69,16 @@ func FetchTransactionByHash(client *ethclient.Client, block *types.Block, tx *ty
 		return
 	}
 
-	chainID, err := client.NetworkID(context.Background())
-	if err != nil {
-		log.Printf("Failed to get network Id [ block : %d ] : %s\n", block.NumberU64(), err.Error())
-		// Passing nil, to denote, failed to fetch all tx data from blockchain node
-		returnValChan <- nil
-	}
+	// log.Printf("Transaction receipt for %s %v\n", tx.Hash().Hex(), receipt)
 
-	msg, err := tx.AsMessage(types.NewEIP155Signer(chainID), nil)
+	// Supports EIP-2930 and EIP-2718 and EIP-1559 and EIP-155 and legacy transactions
+    message, err := tx.AsMessage(types.LatestSignerForChainID(tx.ChainId()), block.BaseFee())
 	if err != nil {
 		log.Printf("Failed to get tx as msg[ block : %d ] : %s\n", block.NumberU64(), err.Error())
 		// Passing nil, to denote, failed to fetch all tx data from blockchain node
 		returnValChan <- nil
 	}
-	sender := common.HexToAddress(msg.From().Hex())
+	sender := message.From()
 
 	// Weird: issue with getting transaction sender using ethclient
 
