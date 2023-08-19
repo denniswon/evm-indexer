@@ -1,8 +1,8 @@
 <!-- omit in toc -->
 
-# ValidationCloud
+# Evm-Indexer
 
-ValidationCloud is a service which uses the Ethereum JSON-RPC API to store the following information in a local datastore (postgres) for the most recent 50 blocks (or more) and provide REST APIs:
+Evm-Indexer is a service which uses the Ethereum JSON-RPC API to store the following information in a local datastore (postgres) for the most recent 50 blocks (or more) and provide REST APIs:
 
 - Get and store **the block** and **all transaction hashes** in the block
 - Get and store all **events related to each transaction in each block**
@@ -28,7 +28,7 @@ The services provided:
 
 ## Table of Contents
 
-- [ValidationCloud](#validationcloud)
+- [Evm-Indexer](#evm-indexer)
   - [Overview](#overview)
   - [Table of Contents](#table-of-contents)
   - [Prerequisite](#prerequisite)
@@ -68,9 +68,9 @@ The services provided:
 ## Installation
 
 ```bash
-git clone git@github.com:denniswon/validationcloud.git
+git clone git@github.com:denniswon/evm-indexer.git
 
-cd validationcloud
+cd evm-indexer
 
 cp .env.example .env
 ```
@@ -95,7 +95,7 @@ DB_USER=user
 DB_PASSWORD=password
 DB_HOST=x.x.x.x
 DB_PORT=5432
-DB_NAME=validationcloud
+DB_NAME=evm-indexer
 
 Production=yes
 
@@ -104,7 +104,7 @@ BlockRange=1000
 TimeRange=21600
 ```
 
-- Build `validationcloud`
+- Build `evm-indexer`
 
 ```bash
 go mod tidy
@@ -112,10 +112,10 @@ go mod tidy
 make build
 ```
 
-- Run `validationcloud`
+- Run `evm-indexer`
 
 ```bash
-./validationcloud
+./evm-indexer
 
 # or to build & run together
 make run
@@ -140,7 +140,7 @@ curl -s localhost:7000/v1/synced | jq
 
 ## Usage
 
-`validationcloud` exposes REST API for querying historical block, transaction & event related data. It can also play role of real time notification engine, when subscribed to supported topics.
+`evm-indexer` exposes REST API for querying historical block, transaction & event related data. It can also play role of real time notification engine, when subscribed to supported topics.
 
 ### Historical Block Data ( REST API )
 
