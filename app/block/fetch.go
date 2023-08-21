@@ -9,6 +9,8 @@ import (
 	d "github.com/denniswon/validationcloud/app/data"
 	"github.com/denniswon/validationcloud/app/db"
 	q "github.com/denniswon/validationcloud/app/queue"
+	u "github.com/denniswon/validationcloud/app/util"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -67,6 +69,10 @@ func FetchTransactionByHash(client *ethclient.Client, block *types.Block, tx *ty
 		// from blockchain node
 		returnValChan <- nil
 		return
+	}
+
+	if u.IsZeroAddress(tx.To()) {
+		log.Printf("Transaction receipt for contract deployment transaction %s %v\n", tx.Hash().Hex(), receipt)
 	}
 
 	// log.Printf("Transaction receipt for %s %v\n", tx.Hash().Hex(), receipt)
