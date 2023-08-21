@@ -70,7 +70,9 @@ func ProcessBlockContent(client *ethclient.Client, block *types.Block, _db *gorm
 		}
 
 		// Successfully processed block
-		log.Printf("Block %d with 0 tx(s) [ Took : %s ]\n", block.NumberU64(), time.Now().UTC().Sub(startingAt))
+		if block.NumberU64() % 1000 == 0 {
+			log.Printf("Block %d with 0 tx(s) [ Took : %s ]\n", block.NumberU64(), time.Now().UTC().Sub(startingAt))
+		}
 		status.IncrementBlocksProcessed()
 
 		return true
@@ -162,8 +164,9 @@ func ProcessBlockContent(client *ethclient.Client, block *types.Block, _db *gorm
 	}
 
 	// Successfully processed block
-	log.Printf("Block %d with %d tx(s) [ Took : %s ]\n", block.NumberU64(), block.Transactions().Len(), time.Now().UTC().Sub(startingAt))
-
+	if block.NumberU64() % 1000 == 0 {
+		log.Printf("Block %d with %d tx(s) [ Took : %s ]\n", block.NumberU64(), block.Transactions().Len(), time.Now().UTC().Sub(startingAt))
+	}
 	status.IncrementBlocksProcessed()
 	return true
 
