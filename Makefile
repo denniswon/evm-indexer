@@ -10,6 +10,9 @@ proto_gen:
 graphql_gen:
 	pushd app/rest; gqlgen generate; popd
 
+setup:
+	sh scripts/setup.sh
+
 build:
 	go build -o validationcloud
 
