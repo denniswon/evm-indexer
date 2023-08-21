@@ -1,7 +1,9 @@
 package data
 
 import (
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 )
 
@@ -22,6 +24,39 @@ type Block struct {
 	TransactionRootHash string  `json:"txRootHash" gorm:"column:txroothash"`
 	ReceiptRootHash     string  `json:"receiptRootHash" gorm:"column:receiptroothash"`
 	ExtraData           []byte  `json:"extraData" gorm:"column:extradata"`
+}
+
+// MarshalBinary - Implementing binary marshalling function, to be invoked
+// by redis before publishing data on channel
+func (b *Block) MarshalBinary() ([]byte, error) {
+	return json.Marshal(b)
+}
+
+// MarshalJSON - Custom JSON encoder
+func (b *Block) MarshalJSON() ([]byte, error) {
+
+	extraData := ""
+	if _h := hex.EncodeToString(b.ExtraData); _h != "" {
+		extraData = fmt.Sprintf("0x%s", _h)
+	}
+
+	return []byte(fmt.Sprintf(`{"hash":%q,"number":%d,"time":%d,"parentHash":%q,"difficulty":%q,"gasUsed":%d,"gasLimit":%d,"nonce":%q,"miner":%q,"size":%f,"stateRootHash":%q,"uncleHash":%q,"txRootHash":%q,"receiptRootHash":%q,"extraData":%q}`,
+		b.Hash,
+		b.Number,
+		b.Time,
+		b.ParentHash,
+		b.Difficulty,
+		b.GasUsed,
+		b.GasLimit,
+		b.Nonce,
+		b.Miner,
+		b.Size,
+		b.StateRootHash,
+		b.UncleHash,
+		b.TransactionRootHash,
+		b.ReceiptRootHash,
+		extraData)), nil
+
 }
 
 // ToJSON - Encodes into JSON, to be supplied when queried for block data

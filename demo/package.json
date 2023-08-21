@@ -1,0 +1,14 @@
+{
+  "name": "demo",
+  "version": "1.0.0",
+  "description": "validationcloud indexer api demo",
+  "main": "block.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jong Hyuck Won <jhwon0820@gmail.com>",
+  "license": "ISC",
+  "dependencies": {
+    "websocket": "^1.0.33"
+  }
+}

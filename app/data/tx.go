@@ -1,8 +1,11 @@
 package data
 
 import (
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
+	"strings"
 )
 
 // Transaction - Transaction holder struct, to be supplied when queried using tx hash
@@ -19,6 +22,34 @@ type Transaction struct {
 	Nonce     uint64 `json:"nonce" gorm:"column:nonce"`
 	State     uint64 `json:"state" gorm:"column:state"`
 	BlockHash string `json:"blockHash" gorm:"column:blockhash"`
+}
+
+// MarshalBinary - Implementing binary marshalling function, to be invoked
+// by redis before publishing data on channel
+func (t *Transaction) MarshalBinary() ([]byte, error) {
+	return json.Marshal(t)
+}
+
+// MarshalJSON - Custom JSON encoder
+func (t *Transaction) MarshalJSON() ([]byte, error) {
+
+	data := ""
+	if _h := hex.EncodeToString(t.Data); _h != "" {
+		data = fmt.Sprintf("0x%s", _h)
+	}
+
+	// When tx doesn't create contract i.e. normal tx
+	if !strings.HasPrefix(t.Contract, "0x") {
+		return []byte(fmt.Sprintf(`{"hash":%q,"from":%q,"to":%q,"value":%q,"data":%q,"gas":%d,"gasPrice":%q,"cost":%q,"nonce":%d,"state":%d,"blockHash":%q}`,
+			t.Hash, t.From, t.To, t.Value,
+			data, t.Gas, t.GasPrice, t.Cost, t.Nonce, t.State, t.BlockHash)), nil
+	}
+
+	// When tx creates contract
+	return []byte(fmt.Sprintf(`{"hash":%q,"from":%q,"contract":%q,"value":%q,"data":%q,"gas":%d,"gasPrice":%q,"cost":%q,"nonce":%d,"state":%d,"blockHash":%q}`,
+		t.Hash, t.From, t.Contract, t.Value,
+		data, t.Gas, t.GasPrice, t.Cost, t.Nonce, t.State, t.BlockHash)), nil
+
 }
 
 // ToJSON - JSON encoder, to be invoked before delivering tx query data to client

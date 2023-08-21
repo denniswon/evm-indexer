@@ -37,6 +37,25 @@ func GetConcurrencyFactor() uint64 {
 	return parsedFactor
 }
 
+// GetBlockConfirmations - Number of block confirmations required
+// before considering that block to be finalized, and can be persisted
+// in a permanent data store
+func GetBlockConfirmations() uint64 {
+
+	confirmationCount := Get("BlockConfirmations")
+	if confirmationCount == "" {
+		return 0
+	}
+
+	parsedConfirmationCount, err := strconv.ParseUint(confirmationCount, 10, 64)
+	if err != nil {
+		log.Printf("[!] Failed to parse block confirmations : %s\n", err.Error())
+		return 0
+	}
+
+	return parsedConfirmationCount
+
+}
 
 // GetBlockNumberRange - Returns how many blocks can be queried at a time
 // when performing range based queries from client side

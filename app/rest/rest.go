@@ -1,10 +1,13 @@
 package rest
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -13,13 +16,21 @@ import (
 	cfg "github.com/denniswon/validationcloud/app/config"
 	d "github.com/denniswon/validationcloud/app/data"
 	"github.com/denniswon/validationcloud/app/db"
+	ps "github.com/denniswon/validationcloud/app/pubsub"
+	"github.com/denniswon/validationcloud/app/rest/graph/generated"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
+	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
+
+	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/99designs/gqlgen/graphql/playground"
+	"github.com/denniswon/validationcloud/app/rest/graph"
 )
 
 // RunHTTPServer - Holds definition for all REST API(s) to be exposed
-func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder) {
+func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder, _redisClient *redis.Client) {
 
 	respondWithJSON := func(data []byte, c *gin.Context) {
 		if data != nil {
@@ -747,6 +758,146 @@ func RunHTTPServer(_db *gorm.DB, _status *d.StatusHolder) {
 		})
 
 	}
+
+	router.GET("/v1/ws", func(c *gin.Context) {
+
+		// Setting read & write buffer size
+		upgrader := websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+		}
+
+		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+
+			log.Printf("[!] Failed to upgrade to websocket : %s\n", err.Error())
+			return
+
+		}
+
+		// Registering websocket connection closing, to be executed when leaving
+		// this function block
+		defer conn.Close()
+
+		// To be used for concurrent safe access of
+		// underlying network socket
+		connLock := sync.Mutex{}
+		// To be used for concurrent safe access of subscribed
+		// topic's associative array
+		topicLock := sync.RWMutex{}
+
+		// Log it when closing connection
+		defer func() {
+
+			log.Printf("[] Closing websocket connection\n",)
+
+		}()
+
+		// All topic subscription/ unsubscription requests
+		// to handled by this higher layer abstraction
+		pubsubManager := ps.SubscriptionManager{
+			Topics:     make(map[string]map[string]*ps.SubscriptionRequest),
+			Consumers:  make(map[string]ps.Consumer),
+			Client:     _redisClient,
+			Connection: conn,
+			DB:         _db,
+			ConnLock:   &connLock,
+			TopicLock:  &topicLock,
+		}
+
+		// Unsubscribe from all pubsub topics ( 3 at max ) when returning from
+		// this execution scope
+		defer func() {
+
+			topicLock.Lock()
+			defer topicLock.Unlock()
+
+			for _, v := range pubsubManager.Consumers {
+				v.Unsubscribe()
+			}
+
+		}()
+
+		// Client communication handling logic
+		for {
+
+			var req ps.SubscriptionRequest
+
+			if err := conn.ReadJSON(&req); err != nil {
+
+				log.Printf("[!] Failed to read message : %s\n", err.Error())
+				break
+
+			}
+
+			// Validating incoming request on websocket subscription channel
+			if !req.Validate(&pubsubManager) {
+				// -- Critical section of code begins
+				//
+				// Attempting to write to shared network connection
+				connLock.Lock()
+
+				if err := conn.WriteJSON(&ps.SubscriptionResponse{Code: 0, Message: "Bad Payload"}); err != nil {
+					log.Printf("[!] Failed to write message : %s\n", err.Error())
+				}
+
+				connLock.Unlock()
+				// -- ends here
+				break
+			}
+
+			// Attempting to subscribe to/ unsubscribe from this topic
+			switch req.Type {
+			case "subscribe":
+				pubsubManager.Subscribe(&req)
+			case "unsubscribe":
+				pubsubManager.Unsubscribe(&req)
+			}
+
+		}
+
+	})
+
+	router.POST("/v1/graphql",
+		// Attempting to pass router context, which so that some job can
+		// be done if needed to (i.e. logging, stats, etc.) before delivering requested piece of data to client
+		func(c *gin.Context) {
+			ctx := context.WithValue(c.Request.Context(), "RouterContextInGraphQL", c)
+			c.Request = c.Request.WithContext(ctx)
+			c.Next()
+		},
+
+		func(c *gin.Context) {
+
+			gql := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{
+				Resolvers: &graph.Resolver{},
+			}))
+
+			if gql == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"msg": "Failed to handle graphQL query",
+				})
+				return
+			}
+
+			gql.ServeHTTP(c.Writer, c.Request)
+
+		})
+
+	router.GET("/v1/graphql-playground", func(c *gin.Context) {
+
+		gpg := playground.Handler("validationcloud", "/v1/graphql")
+
+		if gpg == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"msg": "Failed to create graphQL playground",
+			})
+			return
+		}
+
+		gpg.ServeHTTP(c.Writer, c.Request)
+
+	})
 
 	router.Run(fmt.Sprintf(":%s", cfg.Get("PORT")))
 }
