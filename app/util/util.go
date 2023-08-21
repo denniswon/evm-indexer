@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/shopspring/decimal"
 	"golang.org/x/crypto/sha3"
 )
@@ -125,4 +126,25 @@ func SigRSV(isig interface{}) ([32]byte, [32]byte, uint8) {
 	V := uint8(vI + 27)
 
 	return R, S, V
+}
+
+func TransactionSender( block *types.Block, tx *types.Transaction) (common.Address, error) {
+	// Supports EIP-2930 and EIP-2718 and EIP-1559 and EIP-155 and legacy transactions
+    message, err := tx.AsMessage(types.LatestSignerForChainID(tx.ChainId()), block.BaseFee())
+
+	if err != nil {
+		message, err = tx.AsMessage(types.NewEIP2930Signer(tx.ChainId()), block.BaseFee())
+		if err != nil {
+			message, err = tx.AsMessage(types.NewEIP155Signer(tx.ChainId()), block.BaseFee())
+			if err != nil {
+				message, err = tx.AsMessage(types.HomesteadSigner{}, block.BaseFee())
+				if err != nil {
+					return common.Address{}, err
+				}
+			}
+		}
+	}
+	// log.Printf("tx as msg[ block : %d ] : %v\n", block.NumberU64(), message)
+	sender := message.From()
+	return sender, nil
 }
